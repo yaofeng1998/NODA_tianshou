@@ -2,11 +2,44 @@ import torch
 import numpy as np
 from copy import deepcopy
 from typing import Any, Dict, Tuple, Union, Optional
+import gym
 
+from tianshou.env import DummyVectorEnv
 from tianshou.policy import BasePolicy
 from tianshou.exploration import BaseNoise, GaussianNoise
-from tianshou.data import Batch, ReplayBuffer, to_torch_as
+from tianshou.data import Collector, Batch, ReplayBuffer, to_torch_as
 import pdb
+
+
+class SimulationEnv(gym.Env):
+    def __init__(self, model, init_mean, init_std, base='Pendulum-v0'):
+        base_env = gym.make(base)
+        self.action_space = base_env.action_space
+        self.observation_space = base_env.observation_space
+        del base_env
+        self.init_mean = init_mean
+        self.init_std = init_std
+        self.model = model
+        self.obs = None
+        self.max_step = 10
+        self.current_step = 0
+
+    def reset(self):
+        self.obs = np.random.normal(self.init_mean, self.init_std)
+        self.current_step = 0
+        return self.obs
+
+    def step(self, action):
+        with torch.no_grad():
+            obs, reward = self.model(np.expand_dims(self.obs, axis=0), np.expand_dims(action, axis=0))
+        if self.current_step == self.max_step:
+            done = True
+        else:
+            done = False
+            self.current_step += 1
+        info = {}
+        self.obs = obs.cpu().numpy()[0]
+        return self.obs, reward.cpu().numpy()[0], done, info
 
 
 class SDDPGPolicy(BasePolicy):
@@ -69,8 +102,10 @@ class SDDPGPolicy(BasePolicy):
             self.critic_old = deepcopy(critic)
             self.critic_old.eval()
             self.critic_optim: torch.optim.Optimizer = critic_optim
-        self.simulator = simulator
-        self.simulator_optim = simulator_optim
+        if simulator is not None and simulator_optim is not None:
+            self.simulator = simulator
+            self.simulator_optim = simulator_optim
+        self.simulation_env = None
         assert 0.0 <= tau <= 1.0, "tau should be in [0, 1]"
         self._tau = tau
         assert 0.0 <= gamma <= 1.0, "gamma should be in [0, 1]"
@@ -157,8 +192,7 @@ class SDDPGPolicy(BasePolicy):
         actions = actions.clamp(self._range[0], self._range[1])
         return Batch(act=actions, state=h)
 
-    def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
-        simulator_loss = self.learn_simulator(batch)
+    def learn_batch(self, batch: Batch, simulator_loss) -> Dict[str, float]:
         weight = batch.pop("weight", 1.0)
         current_q = self.critic(batch.obs, batch.act).flatten()
         target_q = batch.returns.flatten()
@@ -180,6 +214,18 @@ class SDDPGPolicy(BasePolicy):
             "loss/actor": actor_loss.item(),
             "loss/critic": critic_loss.item(),
         }
+
+    def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
+        simulator_loss = self.learn_simulator(batch)
+        self.simulation_env = DummyVectorEnv([lambda:
+                                              SimulationEnv(self.simulator, np.zeros(3), np.ones(3))
+                                              for _ in range(8)])
+        simulation_collector = Collector(self, self.simulation_env, ReplayBuffer(1000))
+        simulation_collector.collect(n_episode=10)
+        _batch, indice = simulation_collector.buffer.sample(128)
+        _batch = self.process_fn(_batch, simulation_collector.buffer, indice)
+        self.learn_batch(_batch, simulator_loss)
+        return self.learn_batch(batch, simulator_loss)
 
     def learn_simulator(self, batch: Batch):
         self.simulator_optim.zero_grad()
