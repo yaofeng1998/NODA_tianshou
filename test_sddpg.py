@@ -36,12 +36,13 @@ def get_args():
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--layer-num', type=int, default=1)
     parser.add_argument('--training-num', type=int, default=8)
-    parser.add_argument('--test-num', type=int, default=100)
+    parser.add_argument('--test-num', type=int, default=8)
     parser.add_argument('--logdir', type=str, default='log')
     parser.add_argument('--render', type=float, default=0.)
     parser.add_argument('--rew-norm', type=int, default=1)
     parser.add_argument('--ignore-done', type=int, default=1)
     parser.add_argument('--n-step', type=int, default=1)
+    parser.add_argument('--simulator-loss-threshold', type=float, default=0.5)
     parser.add_argument(
         '--device', type=str,
         default='cuda' if torch.cuda.is_available() else 'cpu')
@@ -84,7 +85,7 @@ def test_ddpg(args=get_args()):
                    args.ode_hidden_dim, args.device).to(args.device)
     ode_optim = torch.optim.Adam(ode.parameters(), lr=args.ode_lr)
     policy = SDDPGPolicy(
-        actor, actor_optim, critic, critic_optim, ode, ode_optim,
+        actor, actor_optim, critic, critic_optim, ode, ode_optim, args,
         action_range=[env.action_space.low[0], env.action_space.high[0]],
         tau=args.tau, gamma=args.gamma,
         exploration_noise=GaussianNoise(sigma=args.exploration_noise),

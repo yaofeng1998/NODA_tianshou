@@ -12,26 +12,25 @@ import pdb
 
 
 class SimulationEnv(gym.Env):
-    def __init__(self, model, init_mean, init_std, base='Pendulum-v0'):
-        base_env = gym.make(base)
-        self.action_space = base_env.action_space
-        self.observation_space = base_env.observation_space
-        del base_env
-        self.init_mean = init_mean
-        self.init_std = init_std
+    def __init__(self, model, action_space, observation_space):
+        self.action_space = action_space
+        self.observation_space = observation_space
+        self.observation_low = self.observation_space.low
+        self.observation_high = self.observation_space.high
         self.model = model
         self.obs = None
         self.max_step = 10
         self.current_step = 0
 
     def reset(self):
-        self.obs = np.random.normal(self.init_mean, self.init_std)
+        self.obs = np.random.rand(*self.observation_low.shape) * \
+                   (self.observation_high - self.observation_low) + self.observation_low
         self.current_step = 0
         return self.obs
 
     def step(self, action):
         with torch.no_grad():
-            obs, reward = self.model(np.expand_dims(self.obs, axis=0), np.expand_dims(action, axis=0))
+            obs, reward = self.model(np.array([self.obs]), np.array([action]))
         if self.current_step == self.max_step:
             done = True
         else:
@@ -39,7 +38,7 @@ class SimulationEnv(gym.Env):
             self.current_step += 1
         info = {}
         self.obs = obs.cpu().numpy()[0]
-        return self.obs, reward.cpu().numpy()[0], done, info
+        return self.obs, reward.cpu().numpy()[0][0], done, info
 
 
 class SDDPGPolicy(BasePolicy):
@@ -54,6 +53,7 @@ class SDDPGPolicy(BasePolicy):
         network.
     :param torch.nn.Module simulator: the simulator network for the environment.
     :param torch.optim.Optimizer simulator_optim: the optimizer for simulator network.
+    :param args: the arguments.
     :param action_range: the action range (minimum, maximum).
     :type action_range: Tuple[float, float]
     :param float tau: param for soft update of the target network, defaults to
@@ -82,6 +82,7 @@ class SDDPGPolicy(BasePolicy):
         critic_optim: Optional[torch.optim.Optimizer],
         simulator: Optional[torch.nn.Module],
         simulator_optim: Optional[torch.optim.Optimizer],
+        args,
         action_range: Tuple[float, float],
         tau: float = 0.005,
         gamma: float = 0.99,
@@ -105,7 +106,10 @@ class SDDPGPolicy(BasePolicy):
         if simulator is not None and simulator_optim is not None:
             self.simulator = simulator
             self.simulator_optim = simulator_optim
+        self.args = args
         self.simulation_env = None
+        self.simulator_loss_threshold = self.args.simulator_loss_threshold
+        self.base_env = gym.make(args.task)
         assert 0.0 <= tau <= 1.0, "tau should be in [0, 1]"
         self._tau = tau
         assert 0.0 <= gamma <= 1.0, "gamma should be in [0, 1]"
@@ -209,23 +213,32 @@ class SDDPGPolicy(BasePolicy):
         self.actor_optim.step()
         self.sync_weight()
         return {
-            "loss/trans": simulator_loss[0].item(),
-            "loss/rew": simulator_loss[1].item(),
-            "loss/actor": actor_loss.item(),
-            "loss/critic": critic_loss.item(),
+            "l_t": simulator_loss[0].item(),
+            "l_r": simulator_loss[1].item(),
+            "l_a": actor_loss.item(),
+            "l_c": critic_loss.item(),
         }
 
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
         simulator_loss = self.learn_simulator(batch)
+        result = self.learn_batch(batch, simulator_loss)
+        if simulator_loss[0].item() < self.simulator_loss_threshold:
+            simulator_result = self.learn_batch(self.simulate_environment(), simulator_loss)
+            result["l_a2"] = simulator_result["l_a"]
+            result["l_c2"] = simulator_result["l_c"]
+        return result
+
+    def simulate_environment(self):
         self.simulation_env = DummyVectorEnv([lambda:
-                                              SimulationEnv(self.simulator, np.zeros(3), np.ones(3))
-                                              for _ in range(8)])
-        simulation_collector = Collector(self, self.simulation_env, ReplayBuffer(1000))
-        simulation_collector.collect(n_episode=10)
-        _batch, indice = simulation_collector.buffer.sample(128)
-        _batch = self.process_fn(_batch, simulation_collector.buffer, indice)
-        self.learn_batch(_batch, simulator_loss)
-        return self.learn_batch(batch, simulator_loss)
+                                              SimulationEnv(self.simulator,
+                                                            self.base_env.action_space,
+                                                            self.base_env.observation_space)
+                                              for _ in range(self.args.training_num)])
+        simulation_collector = Collector(self, self.simulation_env, ReplayBuffer(self.args.buffer_size))
+        simulation_collector.collect(n_step=self.args.collect_per_step)
+        batch, indice = simulation_collector.buffer.sample(self.args.batch_size)
+        batch = self.process_fn(batch, simulation_collector.buffer, indice)
+        return batch
 
     def learn_simulator(self, batch: Batch):
         self.simulator_optim.zero_grad()
