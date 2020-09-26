@@ -259,9 +259,13 @@ class SDDPGPolicy(BasePolicy):
         target_trans_obs, target_rew = torch.tensor(batch.obs_next).float(), torch.tensor(batch.rew).float()
         target_trans_obs = target_trans_obs.to(trans_obs.device)
         target_rew = target_rew.to(rew.device)
-        simulator_loss_trans = self.args.loss_weight_trans * ((trans_obs - target_trans_obs) ** 2).mean()
-        simulator_loss_rew = self.args.loss_weight_rew * ((rew - target_rew) ** 2).mean()
+        simulator_loss_trans = self.args.loss_weight_trans * \
+                               ((trans_obs - target_trans_obs) ** 2).mean()
+        simulator_loss_rew = self.args.loss_weight_rew * \
+                             ((rew - target_rew) ** 2).mean()
         simulator_loss = simulator_loss_trans + simulator_loss_rew
         simulator_loss.backward()
         self.simulator_optim.step()
+        # return (torch.abs(trans_obs - target_trans_obs) / (torch.abs(target_trans_obs) + 1e-6)).mean(), \
+        #        (torch.abs(rew - target_rew) / (torch.abs(target_rew) + 1e-6)).mean()
         return simulator_loss_trans, simulator_loss_rew
