@@ -35,10 +35,14 @@ class ODEBlock(nn.Module):
             action_dim = action_dim[0]
         self.state_dim = state_dim
         self.action_dim = action_dim
-        self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim)
+        self.fc_before_1 = nn.Linear(state_dim + action_dim, hidden_dim)
+        self.bn1 = nn.BatchNorm1d(hidden_dim)
+        self.fc_before_2 = nn.Linear(hidden_dim, hidden_dim)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.fc_before_3 = nn.Linear(hidden_dim, hidden_dim)
         self.odefunc = odefunc(hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, state_dim)
-        self.fc3 = nn.Linear(hidden_dim, 1)
+        self.fc_after_1 = nn.Linear(hidden_dim, state_dim)
+        self.fc_after_2 = nn.Linear(hidden_dim, 1)
         self.softmax = nn.Softmax(dim=-1)
         self.integration_time = torch.tensor([0, 1]).float()
         self.device = device
@@ -46,12 +50,16 @@ class ODEBlock(nn.Module):
 
     def forward(self, obs, act):
         x = torch.tensor(np.concatenate((obs, act), axis=1)).float().to(self.device)
-        out = self.fc1(x)
+        out = self.fc_before_1(x)
+        out = self.bn1(out)
+        out = self.fc_before_2(out)
+        out = self.relu1(out)
+        out = self.fc_before_3(out)
         self.integration_time = self.integration_time.type_as(out)
         out_ode = odeint(self.odefunc, out, self.integration_time, rtol=self.tol, atol=self.tol)[1]
-        out = self.fc2(out_ode)
+        out = self.fc_after_1(out_ode)
         out = out.view(-1, self.state_dim)
-        out_rew = self.fc3(out_ode).view(-1, 1)
+        out_rew = self.fc_after_2(out_ode).view(-1, 1)
         return out, out_rew
 
     @property

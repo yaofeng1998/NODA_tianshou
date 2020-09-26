@@ -24,8 +24,12 @@ def get_args():
     parser.add_argument('--buffer-size', type=int, default=20000)
     parser.add_argument('--actor-lr', type=float, default=1e-4)
     parser.add_argument('--critic-lr', type=float, default=1e-3)
-    parser.add_argument('--ode-lr', type=float, default=1e-4)
-    parser.add_argument('--ode-hidden-dim', type=int, default=64)
+    parser.add_argument('--simulator-lr', type=float, default=3e-5)
+    parser.add_argument('--n-simulator-step', type=int, default=1)
+    parser.add_argument('--loss-weight-trans', type=float, default=2)
+    parser.add_argument('--loss-weight-rew', type=float, default=0.5)
+    parser.add_argument('--simulator-loss-threshold', type=float, default=1)
+    parser.add_argument('--simulator-hidden-dim', type=int, default=256)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--tau', type=float, default=0.005)
     parser.add_argument('--exploration-noise', type=float, default=0.1)
@@ -42,8 +46,6 @@ def get_args():
     parser.add_argument('--rew-norm', type=int, default=1)
     parser.add_argument('--ignore-done', type=int, default=1)
     parser.add_argument('--n-step', type=int, default=1)
-    parser.add_argument('--simulator-loss-threshold', type=float, default=0.5)
-    parser.add_argument('--n-simulator-step', type=int, default=10)
     parser.add_argument(
         '--device', type=str,
         default='cuda' if torch.cuda.is_available() else 'cpu')
@@ -83,8 +85,8 @@ def test_ddpg(args=get_args()):
     critic = Critic(net, args.device).to(args.device)
     critic_optim = torch.optim.Adam(critic.parameters(), lr=args.critic_lr)
     ode = ODEBlock(ODEfunc, args.state_shape, args.action_shape,
-                   args.ode_hidden_dim, args.device).to(args.device)
-    ode_optim = torch.optim.Adam(ode.parameters(), lr=args.ode_lr)
+                   args.simulator_hidden_dim, args.device).to(args.device)
+    ode_optim = torch.optim.Adam(ode.parameters(), lr=args.simulator_lr)
     policy = SDDPGPolicy(
         actor, actor_optim, critic, critic_optim, ode, ode_optim, args,
         action_range=[env.action_space.low[0], env.action_space.high[0]],
@@ -99,7 +101,7 @@ def test_ddpg(args=get_args()):
     test_collector = Collector(
         policy, test_envs, action_noise=GaussianNoise(sigma=args.test_noise))
     # log
-    log_path = os.path.join(args.logdir, args.task, 'ddpg')
+    log_path = os.path.join(args.logdir, args.task, 'sddpg')
     writer = SummaryWriter(log_path)
 
     def train_fn(x):

@@ -213,35 +213,22 @@ class SDDPGPolicy(BasePolicy):
         self.actor_optim.step()
         self.sync_weight()
         return {
-            "l_t": simulator_loss[0].item(),
-            "l_r": simulator_loss[1].item(),
-            "l_a": actor_loss.item(),
-            "l_c": critic_loss.item(),
+            "lt": simulator_loss[0].item(),
+            "lr": simulator_loss[1].item(),
+            "la": actor_loss.item(),
+            "lc": critic_loss.item(),
         }
 
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
         simulator_loss = self.learn_simulator(batch)
         result = self.learn_batch(batch, simulator_loss)
-        if simulator_loss[0].item() < self.simulator_loss_threshold:
+        if simulator_loss[0].item() + simulator_loss[1].item() < self.simulator_loss_threshold:
             simulator_result = self.learn_batch(self.simulate_environment(), simulator_loss)
-            result["l_a2"] = simulator_result["l_a"]
-            result["l_c2"] = simulator_result["l_c"]
+            result["la2"] = simulator_result["la"]
+            result["lc2"] = simulator_result["lc"]
         return result
 
-    # def simulate_environment(self):
-    #     self.simulation_env = DummyVectorEnv([lambda:
-    #                                           SimulationEnv(self.simulator,
-    #                                                         self.base_env.action_space,
-    #                                                         self.base_env.observation_space)
-    #                                           for _ in range(self.args.training_num)])
-    #     simulation_collector = Collector(self, self.simulation_env, ReplayBuffer(self.args.buffer_size))
-    #     simulation_collector.collect(n_step=self.args.collect_per_step)
-    #     batch, indice = simulation_collector.buffer.sample(self.args.batch_size)
-    #     batch = self.process_fn(batch, simulation_collector.buffer, indice)
-    #     return batch
-
     def simulate_environment(self):
-        # change simulation env to batch-style
         self.simulation_env = SimulationEnv(self.simulator,
                                             self.base_env.action_space,
                                             self.base_env.observation_space, self.args)
@@ -255,15 +242,13 @@ class SDDPGPolicy(BasePolicy):
             rew.append(result[1])
             done.append(result[2])
             info.append(result[3])
-            # assume done is all False until self.max_env_step
         batch = Batch(obs=obs[:-1], act=act, rew=rew, done=done, info=info, obs_next=obs[1:])
-        # flatten batch, at this time the shape is (time, ...) instead of (env_num, time, ...)
+        batch.obs = batch.obs.reshape(-1, batch.obs.shape[-1])
+        batch.act = batch.act.reshape(-1, batch.act.shape[-1])
+        batch.rew = batch.rew.reshape(-1)
+        batch.done = batch.done.reshape(-1)
+        batch.obs_next = batch.obs_next.reshape(-1, batch.obs_next.shape[-1])
         batch = Batch(list(batch))
-        batch.obs = batch.obs.transpose(1, 0, 2)
-        batch.act = batch.act.transpose(1, 0, 2)
-        batch.rew = batch.rew.transpose(1, 0)
-        batch.done = batch.done.transpose(1, 0)
-        batch.obs_next = batch.obs_next.transpose(1, 0, 2)
         batch = self.process_fn(batch, batch, np.arange(len(batch)))
         return batch
 
@@ -274,8 +259,8 @@ class SDDPGPolicy(BasePolicy):
         target_trans_obs, target_rew = torch.tensor(batch.obs_next).float(), torch.tensor(batch.rew).float()
         target_trans_obs = target_trans_obs.to(trans_obs.device)
         target_rew = target_rew.to(rew.device)
-        simulator_loss_trans = 10 * ((trans_obs - target_trans_obs) ** 2).mean()
-        simulator_loss_rew = 0.1 * ((rew - target_rew) ** 2).mean()
+        simulator_loss_trans = self.args.loss_weight_trans * ((trans_obs - target_trans_obs) ** 2).mean()
+        simulator_loss_rew = self.args.loss_weight_rew * ((rew - target_rew) ** 2).mean()
         simulator_loss = simulator_loss_trans + simulator_loss_rew
         simulator_loss.backward()
         self.simulator_optim.step()
