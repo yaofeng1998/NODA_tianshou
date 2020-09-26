@@ -12,33 +12,34 @@ import pdb
 
 
 class SimulationEnv(gym.Env):
-    def __init__(self, model, action_space, observation_space):
+    def __init__(self, model, action_space, observation_space, args):
         self.action_space = action_space
         self.observation_space = observation_space
         self.observation_low = self.observation_space.low
         self.observation_high = self.observation_space.high
         self.model = model
         self.obs = None
-        self.max_step = 10
+        self.max_step = args.n_simulator_step
         self.current_step = 0
+        self.batch_size = args.batch_size
 
     def reset(self):
-        self.obs = np.random.rand(*self.observation_low.shape) * \
+        self.obs = np.random.rand(self.batch_size, *self.observation_low.shape) * \
                    (self.observation_high - self.observation_low) + self.observation_low
         self.current_step = 0
         return self.obs
 
     def step(self, action):
         with torch.no_grad():
-            obs, reward = self.model(np.array([self.obs]), np.array([action]))
+            obs, reward = self.model(self.obs, action)
         if self.current_step == self.max_step:
-            done = True
+            done = np.array([True] * self.batch_size)
         else:
-            done = False
+            done = np.array([False] * self.batch_size)
             self.current_step += 1
         info = {}
-        self.obs = obs.cpu().numpy()[0]
-        return self.obs, reward.cpu().numpy()[0][0], done, info
+        self.obs = obs.cpu().numpy()
+        return self.obs, reward.cpu().numpy()[:, 0], done, info
 
 
 class SDDPGPolicy(BasePolicy):
@@ -151,9 +152,9 @@ class SDDPGPolicy(BasePolicy):
     ) -> torch.Tensor:
         batch = buffer[indice]  # batch.obs_next: s_{t+n}
         with torch.no_grad():
-            target_q = self.critic_old(batch.obs_next, self(
-                batch, model='actor_old', input='obs_next',
-                explorating=False).act)
+            target_q = self.critic_old(
+                batch.obs_next,
+                self(batch, model='actor_old', input='obs_next').act)
         return target_q
 
     def process_fn(
@@ -172,7 +173,6 @@ class SDDPGPolicy(BasePolicy):
         state: Optional[Union[dict, Batch, np.ndarray]] = None,
         model: str = "actor",
         input: str = "obs",
-        explorating: bool = True,
         **kwargs: Any,
     ) -> Batch:
         """Compute action over the given batch data.
@@ -191,7 +191,7 @@ class SDDPGPolicy(BasePolicy):
         obs = batch[input]
         actions, h = model(obs, state=state, info=batch.info)
         actions += self._action_bias
-        if self._noise and self.training and explorating:
+        if self._noise and not self.updating:
             actions += to_torch_as(self._noise(actions.shape), actions)
         actions = actions.clamp(self._range[0], self._range[1])
         return Batch(act=actions, state=h)
@@ -206,7 +206,7 @@ class SDDPGPolicy(BasePolicy):
         self.critic_optim.zero_grad()
         critic_loss.backward()
         self.critic_optim.step()
-        action = self(batch, explorating=False).act
+        action = self(batch).act
         actor_loss = -self.critic(batch.obs, action).mean()
         self.actor_optim.zero_grad()
         actor_loss.backward()
@@ -228,17 +228,45 @@ class SDDPGPolicy(BasePolicy):
             result["l_c2"] = simulator_result["l_c"]
         return result
 
+    # def simulate_environment(self):
+    #     self.simulation_env = DummyVectorEnv([lambda:
+    #                                           SimulationEnv(self.simulator,
+    #                                                         self.base_env.action_space,
+    #                                                         self.base_env.observation_space)
+    #                                           for _ in range(self.args.training_num)])
+    #     simulation_collector = Collector(self, self.simulation_env, ReplayBuffer(self.args.buffer_size))
+    #     simulation_collector.collect(n_step=self.args.collect_per_step)
+    #     batch, indice = simulation_collector.buffer.sample(self.args.batch_size)
+    #     batch = self.process_fn(batch, simulation_collector.buffer, indice)
+    #     return batch
+
     def simulate_environment(self):
-        self.simulation_env = DummyVectorEnv([lambda:
-                                              SimulationEnv(self.simulator,
-                                                            self.base_env.action_space,
-                                                            self.base_env.observation_space)
-                                              for _ in range(self.args.training_num)])
-        simulation_collector = Collector(self, self.simulation_env, ReplayBuffer(self.args.buffer_size))
-        simulation_collector.collect(n_step=self.args.collect_per_step)
-        batch, indice = simulation_collector.buffer.sample(self.args.batch_size)
-        batch = self.process_fn(batch, simulation_collector.buffer, indice)
+        # change simulation env to batch-style
+        self.simulation_env = SimulationEnv(self.simulator,
+                                            self.base_env.action_space,
+                                            self.base_env.observation_space, self.args)
+        obs, act, rew, done, info = [], [], [], [], []
+        obs.append(self.simulation_env.reset())
+        for i in range(self.args.n_simulator_step):
+            with torch.no_grad():
+                act.append(self(Batch(obs=obs[-1], info={})).act.cpu().numpy())
+            result = self.simulation_env.step(act[-1])
+            obs.append(result[0])
+            rew.append(result[1])
+            done.append(result[2])
+            info.append(result[3])
+            # assume done is all False until self.max_env_step
+        batch = Batch(obs=obs[:-1], act=act, rew=rew, done=done, info=info, obs_next=obs[1:])
+        # flatten batch, at this time the shape is (time, ...) instead of (env_num, time, ...)
+        batch = Batch(list(batch))
+        batch.obs = batch.obs.transpose(1, 0, 2)
+        batch.act = batch.act.transpose(1, 0, 2)
+        batch.rew = batch.rew.transpose(1, 0)
+        batch.done = batch.done.transpose(1, 0)
+        batch.obs_next = batch.obs_next.transpose(1, 0, 2)
+        batch = self.process_fn(batch, batch, np.arange(len(batch)))
         return batch
+
 
     def learn_simulator(self, batch: Batch):
         self.simulator_optim.zero_grad()

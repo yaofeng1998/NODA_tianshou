@@ -43,6 +43,7 @@ def get_args():
     parser.add_argument('--ignore-done', type=int, default=1)
     parser.add_argument('--n-step', type=int, default=1)
     parser.add_argument('--simulator-loss-threshold', type=float, default=0.5)
+    parser.add_argument('--n-simulator-step', type=int, default=10)
     parser.add_argument(
         '--device', type=str,
         default='cuda' if torch.cuda.is_available() else 'cpu')
