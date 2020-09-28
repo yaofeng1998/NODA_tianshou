@@ -4,6 +4,7 @@ import numpy as np
 from torchdiffeq import odeint
 import pdb
 
+
 class ODEfunc(nn.Module):
 
     def __init__(self, dim=4, hidden_dim=20):
@@ -57,7 +58,7 @@ class BasicBlock(nn.Module):
     def forward(self, x):
         # x = self.fc1(x)
         x = self.conv1(x)
-        # x = self.bn(x)
+        x = self.bn(x)
         # x = self.relu(x)
         return x
 
@@ -70,16 +71,17 @@ class ODEBlock(nn.Module):
             state_dim = state_dim[0]
         if type(action_dim) is tuple:
             action_dim = action_dim[0]
-        self.block_num = 5
+        self.block_num = 3
         self.state_dim = state_dim
         self.action_dim = action_dim
-        self.fc_state_in = nn.Linear(state_dim + action_dim, hidden_dim)
+        self.fc_obs_in = nn.Linear(state_dim + action_dim, hidden_dim)
         self.integration_time = torch.tensor([0, 1]).float()
-        self.odefunc = odefunc(hidden_dim)
+        self.odefunc_obs = odefunc(hidden_dim)
         self.fc_state_out = nn.Linear(hidden_dim, state_dim)
 
         hidden_dim = hidden_dim // 1
         self.fc_rew_in = nn.Linear(state_dim + action_dim, hidden_dim)
+        self.odefunc_rew = odefunc(hidden_dim)
         self.rew_block = [ExpandBlock(hidden_dim)]
         for i in range(self.block_num):
             self.rew_block.append(BasicBlock(hidden_dim))
@@ -91,16 +93,17 @@ class ODEBlock(nn.Module):
     def forward(self, obs, act):
         x = torch.tensor(np.concatenate((obs, act), axis=1)).float().to(self.device)
 
-        out_state = self.fc_state_in(x)
-        self.integration_time = self.integration_time.type_as(out_state)
-        out_state = odeint(self.odefunc, out_state, self.integration_time, rtol=self.tol, atol=self.tol)[1]
-        out_state = self.fc_state_out(out_state)
+        out_obs = self.fc_obs_in(x)
+        self.integration_time = self.integration_time.type_as(out_obs)
+        out_obs = odeint(self.odefunc_obs, out_obs, self.integration_time, rtol=self.tol, atol=self.tol)[1]
+        out_obs = self.fc_state_out(out_obs)
 
         out_rew = self.fc_rew_in(x)
-        out_rew = self.rew_block(out_rew)
-        out_rew = torch.max(out_rew, dim=1)[0]
+        out_rew = odeint(self.odefunc_obs, out_rew, self.integration_time, rtol=self.tol, atol=self.tol)[1]
+        # out_rew = self.rew_block(out_rew)
+        # out_rew = torch.max(out_rew, dim=1)[0]
         out_rew = self.fc_rew_out(out_rew)
-        return out_state, out_rew
+        return out_obs, out_rew
 
     @property
     def nfe(self):

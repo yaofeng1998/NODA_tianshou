@@ -125,6 +125,7 @@ class SDDPGPolicy(BasePolicy):
         self._rew_norm = reward_normalization
         assert estimation_step > 0, "estimation_step should be greater than 0"
         self._n_step = estimation_step
+        self.simulator_loss_history = []
 
     def set_exp_noise(self, noise: Optional[BaseNoise]) -> None:
         """Set the exploration noise."""
@@ -252,11 +253,10 @@ class SDDPGPolicy(BasePolicy):
         batch = self.process_fn(batch, batch, np.arange(len(batch)))
         return batch
 
-
     def learn_simulator(self, batch: Batch):
         self.simulator_optim.zero_grad()
         trans_obs, rew = self.simulator(batch.obs, batch.act)
-        target_trans_obs, target_rew = torch.tensor(batch.obs_next).float(), torch.tensor(batch.rew).float()
+        target_trans_obs, target_rew = torch.tensor(batch.obs_next).float(), batch.returns
         target_trans_obs = target_trans_obs.to(trans_obs.device)
         target_rew = target_rew.to(rew.device)
         simulator_loss_trans = self.args.loss_weight_trans * \
@@ -268,4 +268,5 @@ class SDDPGPolicy(BasePolicy):
         self.simulator_optim.step()
         # return (torch.abs(trans_obs - target_trans_obs) / (torch.abs(target_trans_obs) + 1e-6)).mean(), \
         #        (torch.abs(rew - target_rew) / (torch.abs(target_rew) + 1e-6)).mean()
+        self.simulator_loss_history.append([simulator_loss_trans.item(), simulator_loss_rew.item()])
         return simulator_loss_trans, simulator_loss_rew

@@ -6,6 +6,9 @@ import argparse
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 import pdb
+from torchviz import make_dot
+import matplotlib.pyplot as plt
+import time
 
 from sddpg import SDDPGPolicy
 from tianshou.env import DummyVectorEnv
@@ -25,10 +28,10 @@ def get_args():
     parser.add_argument('--buffer-size', type=int, default=20000)
     parser.add_argument('--actor-lr', type=float, default=1e-4)
     parser.add_argument('--critic-lr', type=float, default=1e-3)
-    parser.add_argument('--simulator-lr', type=float, default=1e-3)
+    parser.add_argument('--simulator-lr', type=float, default=1e-4)
     parser.add_argument('--n-simulator-step', type=int, default=1)
     parser.add_argument('--loss-weight-trans', type=float, default=1)
-    parser.add_argument('--loss-weight-rew', type=float, default=1000)
+    parser.add_argument('--loss-weight-rew', type=float, default=1)
     parser.add_argument('--simulator-loss-threshold', type=float, default=0.01)
     parser.add_argument('--simulator-hidden-dim', type=int, default=128)
     parser.add_argument('--gamma', type=float, default=0.99)
@@ -52,6 +55,18 @@ def get_args():
         default='cuda' if torch.cuda.is_available() else 'cpu')
     args = parser.parse_known_args()[0]
     return args
+
+
+def visualize_network(args, model):
+    state_shape = args.state_shape
+    action_shape = args.action_shape
+    if type(args.state_shape) is tuple:
+        state_shape = args.state_shape[0]
+    if type(args.action_shape) is tuple:
+        action_shape = args.action_shape[0]
+    vis_graph = make_dot(model(np.ones((1, state_shape)),
+                               np.ones((1, action_shape))), params=dict(ode.named_parameters()))
+    vis_graph.view()
 
 
 def test_sddpg(args=get_args()):
@@ -105,8 +120,16 @@ def test_sddpg(args=get_args()):
     log_path = os.path.join(args.logdir, args.task, 'sddpg')
     writer = SummaryWriter(log_path)
 
-    def train_fn(x):
-        pdb.set_trace()
+    def train_fn(x, global_step):
+        simulator_loss_history = np.array(policy.simulator_loss_history)
+        if len(simulator_loss_history) == 0:
+            return None
+        x = np.arange(len(simulator_loss_history))
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+        ax[0].plot(x, simulator_loss_history[:, 0])
+        ax[1].plot(x, simulator_loss_history[:, 1])
+        fig.tight_layout()
+        plt.savefig(log_path + str(time.time()) + ".pdf")
         return None
 
     def save_fn(policy):
@@ -119,7 +142,8 @@ def test_sddpg(args=get_args()):
     result = offpolicy_trainer(
         policy, train_collector, test_collector, args.epoch,
         args.step_per_epoch, args.collect_per_step, args.test_num,
-        args.batch_size, stop_fn=stop_fn, save_fn=save_fn, writer=writer)
+        args.batch_size, train_fn=train_fn,
+        stop_fn=stop_fn, save_fn=save_fn, writer=writer)
     assert stop_fn(result['best_reward'])
     if __name__ == '__main__':
         pprint.pprint(result)
