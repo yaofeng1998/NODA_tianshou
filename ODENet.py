@@ -96,10 +96,12 @@ class ODEBlock(nn.Module):
         out_obs = self.fc_obs_in(x)
         self.integration_time = self.integration_time.type_as(out_obs)
         out_obs = odeint(self.odefunc_obs, out_obs, self.integration_time, rtol=self.tol, atol=self.tol)[1]
+        # out_obs = self.odefunc_obs(0, out_obs)
         out_obs = self.fc_state_out(out_obs)
 
         out_rew = self.fc_rew_in(x)
-        out_rew = odeint(self.odefunc_obs, out_rew, self.integration_time, rtol=self.tol, atol=self.tol)[1]
+        out_rew = odeint(self.odefunc_rew, out_rew, self.integration_time, rtol=self.tol, atol=self.tol)[1]
+        # out_rew = self.odefunc_rew(0, out_rew)
         # out_rew = self.rew_block(out_rew)
         # out_rew = torch.max(out_rew, dim=1)[0]
         out_rew = self.fc_rew_out(out_rew)

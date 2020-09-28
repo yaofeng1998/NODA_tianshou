@@ -126,8 +126,8 @@ def test_sddpg(args=get_args()):
             return None
         x = np.arange(len(simulator_loss_history))
         fig, ax = plt.subplots(1, 2, figsize=(10, 5))
-        ax[0].plot(x, simulator_loss_history[:, 0])
-        ax[1].plot(x, simulator_loss_history[:, 1])
+        ax[0].semilogy(x, simulator_loss_history[:, 0])
+        ax[1].semilogy(x, simulator_loss_history[:, 1])
         fig.tight_layout()
         plt.savefig(log_path + str(time.time()) + ".pdf")
         return None
