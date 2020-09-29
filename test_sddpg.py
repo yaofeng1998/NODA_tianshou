@@ -65,7 +65,7 @@ def visualize_network(args, model):
     if type(args.action_shape) is tuple:
         action_shape = args.action_shape[0]
     vis_graph = make_dot(model(np.ones((1, state_shape)),
-                               np.ones((1, action_shape))), params=dict(ode.named_parameters()))
+                               np.ones((1, action_shape))), params=dict(model.named_parameters()))
     vis_graph.view()
 
 

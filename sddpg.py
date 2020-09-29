@@ -251,6 +251,7 @@ class SDDPGPolicy(BasePolicy):
         batch.obs_next = batch.obs_next.reshape(-1, batch.obs_next.shape[-1])
         batch = Batch(list(batch))
         batch = self.process_fn(batch, batch, np.arange(len(batch)))
+        batch.returns = self.critic(batch.obs, batch.act)
         return batch
 
     def learn_simulator(self, batch: Batch):
@@ -269,4 +270,4 @@ class SDDPGPolicy(BasePolicy):
         # return (torch.abs(trans_obs - target_trans_obs) / (torch.abs(target_trans_obs) + 1e-6)).mean(), \
         #        (torch.abs(rew - target_rew) / (torch.abs(target_rew) + 1e-6)).mean()
         self.simulator_loss_history.append([simulator_loss_trans.item(), simulator_loss_rew.item()])
-        return simulator_loss_trans, simulator_loss_rew
+        return simulator_loss_trans, simulator_loss_rew * 0
