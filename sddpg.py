@@ -127,7 +127,7 @@ class SDDPGPolicy(BasePolicy):
         assert estimation_step > 0, "estimation_step should be greater than 0"
         self._n_step = estimation_step
         self.simulator_loss_history = []
-        self.gbm_model = None
+        self.gbm_model = [None] * 4
         self.parameters = {
             'task': 'train',
             'application': 'regression',
@@ -278,26 +278,32 @@ class SDDPGPolicy(BasePolicy):
         target_trans_obs, target_rew = torch.tensor(batch.obs_next).float(), torch.tensor(batch.rew).float()
         target_trans_obs = target_trans_obs.to(trans_obs.device)
         target_rew = target_rew.to(rew.device)
-        lgb_train = lgb.Dataset(np.concatenate((batch.obs, batch.act), axis=1), label=target_rew.cpu().numpy())
-        self.gbm_model = lgb.train(self.parameters,
-                                   lgb_train,
-                                   valid_sets=[lgb_train],
-                                   num_boost_round=100,  # 提升迭代的次数
-                                   early_stopping_rounds=10,
-                                   evals_result={},
-                                   verbose_eval=False,
-                                   init_model=self.gbm_model,
-                                   keep_training_booster=True)
-        rew = self.gbm_model.predict(np.concatenate((batch.obs, batch.act), axis=1),
-                                     num_iteration=self.gbm_model.best_iteration)
-        rew = torch.tensor(rew).float().to(self.args.device)
+        x = np.concatenate((batch.obs, batch.act), axis=1)
+        y = [batch.rew, batch.obs_next[:, 0], batch.obs_next[:, 1], batch.obs_next[:, 2]]
+        y_pre = []
+        for i in range(4):
+            lgb_train = lgb.Dataset(x, label=y[i])
+            self.gbm_model[i] = lgb.train(self.parameters,
+                                          lgb_train,
+                                          valid_sets=[lgb_train],
+                                          num_boost_round=100,
+                                          early_stopping_rounds=10,
+                                          evals_result={},
+                                          verbose_eval=False,
+                                          init_model=self.gbm_model[i],
+                                          keep_training_booster=True)
+            y_pre.append(torch.tensor(self.gbm_model[i].predict(x,
+                                                                num_iteration=self.gbm_model[i].best_iteration)).
+                         to(self.args.device))
+        trans_obs = torch.stack(y_pre[:-1]).transpose(0, 1)
+        rew = y_pre[-1]
         simulator_loss_trans = self.args.loss_weight_trans * \
                                ((trans_obs - target_trans_obs) ** 2).mean()
         simulator_loss_rew = self.args.loss_weight_rew * \
                              ((rew - target_rew) ** 2).mean()
-        simulator_loss = simulator_loss_trans
-        simulator_loss.backward()
-        self.simulator_optim.step()
+        # simulator_loss = simulator_loss_trans
+        # simulator_loss.backward()
+        # self.simulator_optim.step()
         self.simulator_loss_history.append([simulator_loss_trans.item(), simulator_loss_rew.item()])
         return (torch.abs(trans_obs - target_trans_obs) / (torch.abs(target_trans_obs) + 1e-6)).mean().item(), \
                (torch.abs(rew - target_rew) / (torch.abs(target_rew) + 1e-6)).mean().item()
