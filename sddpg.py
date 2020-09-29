@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from copy import deepcopy
 from typing import Any, Dict, Tuple, Union, Optional
+import lightgbm as lgb
 import gym
 
 from tianshou.env import DummyVectorEnv
@@ -126,6 +127,22 @@ class SDDPGPolicy(BasePolicy):
         assert estimation_step > 0, "estimation_step should be greater than 0"
         self._n_step = estimation_step
         self.simulator_loss_history = []
+        self.gbm_model = None
+        self.parameters = {
+            'task': 'train',
+            'application': 'regression',
+            'boosting_type': 'gbdt',
+            'learning_rate': 0.01,
+            'bagging_fraction': 0.7,
+            'num_leaves': 50,
+            'tree_learner': 'serial',
+            'min_data_in_leaf': 50,
+            'metric': 'l2',
+            'max_bin': 128,
+            'verbose': -1,
+            'max_depth': 7
+        }
+
 
     def set_exp_noise(self, noise: Optional[BaseNoise]) -> None:
         """Set the exploration noise."""
@@ -214,8 +231,8 @@ class SDDPGPolicy(BasePolicy):
         self.actor_optim.step()
         self.sync_weight()
         return {
-            "lt": simulator_loss[0].item(),
-            "lr": simulator_loss[1].item(),
+            "lt": simulator_loss[0],
+            "lr": simulator_loss[1],
             "la": actor_loss.item(),
             "lc": critic_loss.item(),
         }
@@ -223,7 +240,7 @@ class SDDPGPolicy(BasePolicy):
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
         simulator_loss = self.learn_simulator(batch)
         result = self.learn_batch(batch, simulator_loss)
-        if simulator_loss[0].item() + simulator_loss[1].item() < self.simulator_loss_threshold:
+        if simulator_loss[0] + simulator_loss[1] < self.simulator_loss_threshold:
             simulator_result = self.learn_batch(self.simulate_environment(), simulator_loss)
             result["la2"] = simulator_result["la"]
             result["lc2"] = simulator_result["lc"]
@@ -250,24 +267,38 @@ class SDDPGPolicy(BasePolicy):
         batch.done = batch.done.reshape(-1)
         batch.obs_next = batch.obs_next.reshape(-1, batch.obs_next.shape[-1])
         batch = Batch(list(batch))
+        batch.rew = self.gbm_model.predict(np.concatenate((batch.obs, batch.act), axis=1),
+                                           num_iteration=self.gbm_model.best_iteration)
         batch = self.process_fn(batch, batch, np.arange(len(batch)))
-        batch.returns = self.critic(batch.obs, batch.act)
         return batch
 
     def learn_simulator(self, batch: Batch):
         self.simulator_optim.zero_grad()
         trans_obs, rew = self.simulator(batch.obs, batch.act)
-        target_trans_obs, target_rew = torch.tensor(batch.obs_next).float(), batch.returns
+        target_trans_obs, target_rew = torch.tensor(batch.obs_next).float(), torch.tensor(batch.rew).float()
         target_trans_obs = target_trans_obs.to(trans_obs.device)
         target_rew = target_rew.to(rew.device)
+        lgb_train = lgb.Dataset(np.concatenate((batch.obs, batch.act), axis=1), label=target_rew.cpu().numpy())
+        self.gbm_model = lgb.train(self.parameters,
+                                   lgb_train,
+                                   valid_sets=[lgb_train],
+                                   num_boost_round=100,  # 提升迭代的次数
+                                   early_stopping_rounds=10,
+                                   evals_result={},
+                                   verbose_eval=False,
+                                   init_model=self.gbm_model,
+                                   keep_training_booster=True)
+        rew = self.gbm_model.predict(np.concatenate((batch.obs, batch.act), axis=1),
+                                     num_iteration=self.gbm_model.best_iteration)
+        rew = torch.tensor(rew).float().to(self.args.device)
         simulator_loss_trans = self.args.loss_weight_trans * \
                                ((trans_obs - target_trans_obs) ** 2).mean()
         simulator_loss_rew = self.args.loss_weight_rew * \
                              ((rew - target_rew) ** 2).mean()
-        simulator_loss = simulator_loss_trans + simulator_loss_rew
+        simulator_loss = simulator_loss_trans
         simulator_loss.backward()
         self.simulator_optim.step()
-        # return (torch.abs(trans_obs - target_trans_obs) / (torch.abs(target_trans_obs) + 1e-6)).mean(), \
-        #        (torch.abs(rew - target_rew) / (torch.abs(target_rew) + 1e-6)).mean()
         self.simulator_loss_history.append([simulator_loss_trans.item(), simulator_loss_rew.item()])
-        return simulator_loss_trans, simulator_loss_rew * 0
+        return (torch.abs(trans_obs - target_trans_obs) / (torch.abs(target_trans_obs) + 1e-6)).mean().item(), \
+               (torch.abs(rew - target_rew) / (torch.abs(target_rew) + 1e-6)).mean().item()
+        # return simulator_loss_trans.item(), simulator_loss_rew.item()
