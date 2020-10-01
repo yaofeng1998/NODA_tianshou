@@ -32,7 +32,7 @@ def get_args():
     parser.add_argument('--n-simulator-step', type=int, default=1)
     parser.add_argument('--loss-weight-trans', type=float, default=1)
     parser.add_argument('--loss-weight-rew', type=float, default=1)
-    parser.add_argument('--simulator-loss-threshold', type=float, default=0.01)
+    parser.add_argument('--simulator-loss-threshold', type=float, default=1)
     parser.add_argument('--simulator-hidden-dim', type=int, default=128)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--tau', type=float, default=0.005)

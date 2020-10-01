@@ -128,20 +128,24 @@ class SDDPGPolicy(BasePolicy):
         self._n_step = estimation_step
         self.simulator_loss_history = []
         self.gbm_model = None
-        self.parameters = {
+        self.gbm_parameters = {
             'task': 'train',
             'application': 'regression',
             'boosting_type': 'gbdt',
-            'learning_rate': 0.01,
-            'bagging_fraction': 0.7,
-            'num_leaves': 50,
-            'tree_learner': 'serial',
+            'learning_rate': 1e-3,
+            'num_leaves': 80,
             'min_data_in_leaf': 50,
             'metric': 'l2',
-            'max_bin': 128,
+            'max_bin': 63,
             'verbose': -1,
-            'max_depth': 7
+            'max_depth': 8,
+            'is_unbalance': 'true',
+            'nthread': 8,
         }
+        if self.args.device == 'cuda':
+            self.gbm_parameters['device'] = 'gpu'
+            self.gbm_parameters['gpu_platform_id'] = 0
+            self.gbm_parameters['gpu_device_id'] = 0
 
 
     def set_exp_noise(self, noise: Optional[BaseNoise]) -> None:
@@ -279,26 +283,24 @@ class SDDPGPolicy(BasePolicy):
         target_trans_obs = target_trans_obs.to(trans_obs.device)
         target_rew = target_rew.to(rew.device)
         lgb_train = lgb.Dataset(np.concatenate((batch.obs, batch.act), axis=1), label=target_rew.cpu().numpy())
-        self.gbm_model = lgb.train(self.parameters,
+        evals_result = {}
+        self.gbm_model = lgb.train(self.gbm_parameters,
                                    lgb_train,
                                    valid_sets=[lgb_train],
-                                   num_boost_round=100,  # 提升迭代的次数
+                                   num_boost_round=100,
                                    early_stopping_rounds=10,
-                                   evals_result={},
+                                   evals_result=evals_result,
                                    verbose_eval=False,
                                    init_model=self.gbm_model,
                                    keep_training_booster=True)
-        rew = self.gbm_model.predict(np.concatenate((batch.obs, batch.act), axis=1),
-                                     num_iteration=self.gbm_model.best_iteration)
-        rew = torch.tensor(rew).float().to(self.args.device)
         simulator_loss_trans = self.args.loss_weight_trans * \
                                ((trans_obs - target_trans_obs) ** 2).mean()
-        simulator_loss_rew = self.args.loss_weight_rew * \
-                             ((rew - target_rew) ** 2).mean()
         simulator_loss = simulator_loss_trans
         simulator_loss.backward()
         self.simulator_optim.step()
-        self.simulator_loss_history.append([simulator_loss_trans.item(), simulator_loss_rew.item()])
-        return (torch.abs(trans_obs - target_trans_obs) / (torch.abs(target_trans_obs) + 1e-6)).mean().item(), \
-               (torch.abs(rew - target_rew) / (torch.abs(target_rew) + 1e-6)).mean().item()
-        # return simulator_loss_trans.item(), simulator_loss_rew.item()
+        simulator_loss_trans = simulator_loss_trans.item()
+        simulator_loss_rew = self.args.loss_weight_rew * np.mean(evals_result['training']['l2'])
+        self.simulator_loss_history.append([simulator_loss_trans, simulator_loss_rew])
+        # return (torch.abs(trans_obs - target_trans_obs) / (torch.abs(target_trans_obs) + 1e-6)).mean().item(), \
+        #        (torch.abs(rew - target_rew) / (torch.abs(target_rew) + 1e-6)).mean().item()
+        return simulator_loss_trans, simulator_loss_rew
