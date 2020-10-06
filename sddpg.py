@@ -128,24 +128,24 @@ class SDDPGPolicy(BasePolicy):
         self._n_step = estimation_step
         self.simulator_loss_history = []
         self.gbm_model = None
+        self.update_step = self.args.max_update_step
         self.gbm_parameters = {
             'task': 'train',
             'application': 'regression',
             'boosting_type': 'gbdt',
-            'learning_rate': 1e-3,
+            'learning_rate': 3e-3,
             'num_leaves': 80,
-            'min_data_in_leaf': 50,
+            'min_data_in_leaf': 10,
             'metric': 'l2',
-            'max_bin': 63,
+            'max_bin': 255,
             'verbose': -1,
-            'max_depth': 8,
-            'is_unbalance': 'true',
             'nthread': 8,
         }
         if self.args.device == 'cuda':
-            self.gbm_parameters['device'] = 'gpu'
-            self.gbm_parameters['gpu_platform_id'] = 0
-            self.gbm_parameters['gpu_device_id'] = 0
+            # self.gbm_parameters['device'] = 'gpu'
+            # self.gbm_parameters['gpu_platform_id'] = 0
+            # self.gbm_parameters['gpu_device_id'] = 0
+            pass
 
 
     def set_exp_noise(self, noise: Optional[BaseNoise]) -> None:
@@ -218,7 +218,15 @@ class SDDPGPolicy(BasePolicy):
         actions = actions.clamp(self._range[0], self._range[1])
         return Batch(act=actions, state=h)
 
-    def learn_batch(self, batch: Batch, simulator_loss) -> Dict[str, float]:
+    def learn_batch(self, batch: Batch, simulator_loss, simulating = False) -> Dict[str, float]:
+        if simulating is False:
+            if self.update_step == 0:
+                return {
+                    "lt": simulator_loss[0],
+                    "lr": simulator_loss[1],
+                }
+            else:
+                self.update_step -= 1
         weight = batch.pop("weight", 1.0)
         current_q = self.critic(batch.obs, batch.act).flatten()
         target_q = batch.returns.flatten()
@@ -242,10 +250,13 @@ class SDDPGPolicy(BasePolicy):
         }
 
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
-        simulator_loss = self.learn_simulator(batch)
+        if self.update_step > 0:
+            simulator_loss = self.learn_simulator(batch)
+        else:
+            simulator_loss = np.array([0, 0])
         result = self.learn_batch(batch, simulator_loss)
-        if simulator_loss[0] + simulator_loss[1] < self.simulator_loss_threshold:
-            simulator_result = self.learn_batch(self.simulate_environment(), simulator_loss)
+        if simulator_loss[0] + simulator_loss[1] <= self.simulator_loss_threshold:
+            simulator_result = self.learn_batch(self.simulate_environment(), simulator_loss, True)
             result["la2"] = simulator_result["la"]
             result["lc2"] = simulator_result["lc"]
         return result
