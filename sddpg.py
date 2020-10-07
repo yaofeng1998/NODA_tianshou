@@ -13,16 +13,17 @@ import pdb
 
 
 class SimulationEnv(gym.Env):
-    def __init__(self, model, action_space, observation_space, args):
+    def __init__(self, trans_model, rew_model, action_space, observation_space, args):
         self.action_space = action_space
         self.observation_space = observation_space
         self.observation_low = self.observation_space.low
         self.observation_high = self.observation_space.high
-        self.model = model
+        self.trans_model = trans_model
+        self.rew_model = rew_model
         self.obs = None
         self.max_step = args.n_simulator_step
         self.current_step = 0
-        self.batch_size = args.batch_size
+        self.batch_size = max(args.batch_size // args.n_simulator_step, 1)
 
     def reset(self):
         self.obs = np.random.rand(self.batch_size, *self.observation_low.shape) * \
@@ -32,7 +33,10 @@ class SimulationEnv(gym.Env):
 
     def step(self, action):
         with torch.no_grad():
-            obs, reward = self.model(self.obs, action)
+            obs, reward = self.trans_model(self.obs, action)
+        reward = self.rew_model.predict(np.concatenate((self.obs, action), axis=1),
+                                        num_iteration=self.rew_model.best_iteration)
+        assert self.current_step <= self.max_step
         if self.current_step == self.max_step:
             done = np.array([True] * self.batch_size)
         else:
@@ -40,7 +44,7 @@ class SimulationEnv(gym.Env):
             self.current_step += 1
         info = {}
         self.obs = obs.cpu().numpy()
-        return self.obs, reward.cpu().numpy()[:, 0], done, info
+        return self.obs, reward, done, info
 
 
 class SDDPGPolicy(BasePolicy):
@@ -252,9 +256,10 @@ class SDDPGPolicy(BasePolicy):
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
         if self.update_step > 0:
             simulator_loss = self.learn_simulator(batch)
+            result = self.learn_batch(batch, simulator_loss)
         else:
             simulator_loss = np.array([0, 0])
-        result = self.learn_batch(batch, simulator_loss)
+            result = {}
         if simulator_loss[0] + simulator_loss[1] <= self.simulator_loss_threshold:
             simulator_result = self.learn_batch(self.simulate_environment(), simulator_loss, True)
             result["la2"] = simulator_result["la"]
@@ -262,7 +267,7 @@ class SDDPGPolicy(BasePolicy):
         return result
 
     def simulate_environment(self):
-        self.simulation_env = SimulationEnv(self.simulator,
+        self.simulation_env = SimulationEnv(self.simulator, self.gbm_model,
                                             self.base_env.action_space,
                                             self.base_env.observation_space, self.args)
         obs, act, rew, done, info = [], [], [], [], []
