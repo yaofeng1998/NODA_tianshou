@@ -50,7 +50,7 @@ def get_args():
     parser.add_argument('--rew-norm', type=int, default=1)
     parser.add_argument('--ignore-done', type=int, default=1)
     parser.add_argument('--n-step', type=int, default=1)
-    parser.add_argument('--max-update-step', type=int, default=400)
+    parser.add_argument('--max-update-step', type=int, default=50)
     parser.add_argument(
         '--device', type=str,
         default='cuda' if torch.cuda.is_available() else 'cpu')

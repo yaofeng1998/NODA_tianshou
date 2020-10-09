@@ -14,6 +14,7 @@ import pdb
 
 class SimulationEnv(gym.Env):
     def __init__(self, trans_model, rew_model, action_space, observation_space, args):
+        self.env = gym.make(args.task)
         self.action_space = action_space
         self.observation_space = observation_space
         self.observation_low = self.observation_space.low
@@ -26,25 +27,27 @@ class SimulationEnv(gym.Env):
         self.batch_size = max(args.batch_size // args.n_simulator_step, 1)
 
     def reset(self):
-        self.obs = np.random.rand(self.batch_size, *self.observation_low.shape) * \
-                   (self.observation_high - self.observation_low) + self.observation_low
-        self.current_step = 0
-        return self.obs
+        # self.obs = np.random.rand(self.batch_size, *self.observation_low.shape) * \
+        #            (self.observation_high - self.observation_low) + self.observation_low
+        # self.current_step = 0
+        # return self.obs
+        return self.env.reset()[np.newaxis, :]
 
     def step(self, action):
-        with torch.no_grad():
-            obs, reward = self.trans_model(self.obs, action)
-        reward = self.rew_model.predict(np.concatenate((self.obs, action), axis=1),
-                                        num_iteration=self.rew_model.best_iteration)
-        assert self.current_step <= self.max_step
-        if self.current_step == self.max_step:
-            done = np.array([True] * self.batch_size)
-        else:
-            done = np.array([False] * self.batch_size)
-            self.current_step += 1
-        info = {}
-        self.obs = obs.cpu().numpy()
-        return self.obs, reward, done, info
+        # with torch.no_grad():
+        #     obs, reward = self.trans_model(self.obs, action)
+        # reward = self.rew_model.predict(np.concatenate((self.obs, action), axis=1),
+        #                                 num_iteration=self.rew_model.best_iteration)
+        # assert self.current_step <= self.max_step
+        # if self.current_step == self.max_step:
+        #     done = np.array([True] * self.batch_size)
+        # else:
+        #     done = np.array([False] * self.batch_size)
+        #     self.current_step += 1
+        # info = {}
+        # self.obs = obs.cpu().numpy()
+        # return self.obs, reward, done, info
+        return self.env.step(action)
 
 
 class SDDPGPolicy(BasePolicy):
@@ -276,7 +279,7 @@ class SDDPGPolicy(BasePolicy):
             with torch.no_grad():
                 act.append(self(Batch(obs=obs[-1], info={})).act.cpu().numpy())
             result = self.simulation_env.step(act[-1])
-            obs.append(result[0])
+            obs.append(result[0].reshape(1,-1))
             rew.append(result[1])
             done.append(result[2])
             info.append(result[3])
