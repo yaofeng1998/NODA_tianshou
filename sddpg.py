@@ -13,12 +13,13 @@ import pdb
 
 
 class SimulationEnv(gym.Env):
-    def __init__(self, model, action_space, observation_space, args):
+    def __init__(self, trans_model, rew_model, action_space, observation_space, args):
         self.action_space = action_space
         self.observation_space = observation_space
         self.observation_low = self.observation_space.low
         self.observation_high = self.observation_space.high
-        self.model = model
+        self.trans_model = trans_model
+        self.rew_model = rew_model
         self.obs = None
         self.max_step = args.n_simulator_step
         self.current_step = 0
@@ -32,7 +33,10 @@ class SimulationEnv(gym.Env):
 
     def step(self, action):
         with torch.no_grad():
-            obs, reward = self.model(self.obs, action)
+            obs, reward = self.trans_model(self.obs, action)
+        reward = self.rew_model.predict(np.concatenate((self.obs, action), axis=1),
+                                        num_iteration=self.rew_model.best_iteration)
+        assert self.current_step <= self.max_step
         if self.current_step == self.max_step:
             done = np.array([True] * self.batch_size)
         else:
@@ -40,7 +44,7 @@ class SimulationEnv(gym.Env):
             self.current_step += 1
         info = {}
         self.obs = obs.cpu().numpy()
-        return self.obs, reward.cpu().numpy()[:, 0], done, info
+        return self.obs, reward, done, info
 
 
 class SDDPGPolicy(BasePolicy):
@@ -132,21 +136,20 @@ class SDDPGPolicy(BasePolicy):
             'task': 'train',
             'application': 'regression',
             'boosting_type': 'gbdt',
-            'learning_rate': 1e-3,
+            'learning_rate': 3e-3,
             'num_leaves': 80,
-            'min_data_in_leaf': 50,
+            'min_data_in_leaf': 10,
             'metric': 'l2',
-            'max_bin': 63,
+            'max_bin': 255,
             'verbose': -1,
             'max_depth': 8,
-            'is_unbalance': 'true',
             'nthread': 8,
         }
         if self.args.device == 'cuda':
-            self.gbm_parameters['device'] = 'gpu'
-            self.gbm_parameters['gpu_platform_id'] = 0
-            self.gbm_parameters['gpu_device_id'] = 0
-
+            # self.gbm_parameters['device'] = 'gpu'
+            # self.gbm_parameters['gpu_platform_id'] = 0
+            # self.gbm_parameters['gpu_device_id'] = 0
+            pass
 
     def set_exp_noise(self, noise: Optional[BaseNoise]) -> None:
         """Set the exploration noise."""
@@ -251,7 +254,7 @@ class SDDPGPolicy(BasePolicy):
         return result
 
     def simulate_environment(self):
-        self.simulation_env = SimulationEnv(self.simulator,
+        self.simulation_env = SimulationEnv(self.simulator, self.gbm_model,
                                             self.base_env.action_space,
                                             self.base_env.observation_space, self.args)
         obs, act, rew, done, info = [], [], [], [], []
