@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torchdiffeq import odeint
+import lightgbm as lgb
 import pdb
 
 
@@ -67,10 +68,10 @@ class BasicBlock(nn.Module):
         return x
 
 
-class ODENet(nn.Module):
+class ODEGBM(nn.Module):
 
     def __init__(self, args, hidden_dim=20, tol=1e-3):
-        super(ODENet, self).__init__()
+        super(ODEGBM, self).__init__()
         self.args = args
         state_shape = args.state_shape
         action_shape = args.action_shape
@@ -86,69 +87,81 @@ class ODENet(nn.Module):
         self.odefunc_obs = ODEfunc(hidden_dim)
         self.fc_state_out = nn.Linear(hidden_dim, state_shape)
 
-        hidden_dim = hidden_dim // 1
-        self.fc_rew_in = nn.Linear(state_shape + action_shape, hidden_dim)
-        self.odefunc_rew = ODEfunc(hidden_dim)
-        self.rew_block = [ExpandBlock(hidden_dim)]
-        for i in range(self.block_num):
-            self.rew_block.append(BasicBlock(hidden_dim))
-        self.rew_block = nn.Sequential(*self.rew_block)
-        self.fc_rew_out = nn.Linear(hidden_dim, 1)
+        self.gbm_model = None
+        self.gbm_parameters = {
+            'task': 'train',
+            'application': 'regression',
+            'boosting_type': 'gbdt',
+            'learning_rate': 3e-3,
+            'num_leaves': 80,
+            'min_data_in_leaf': 10,
+            'metric': 'l2',
+            'max_bin': 2048,
+            'verbose': 1,
+            'nthread': 16,
+        }
         self.device = args.device
         self.tol = tol
         self.train_data = []
         self.train_targets = [[], []]
         self.optimizer = torch.optim.Adam(self.parameters(), lr=args.simulator_lr)
 
-    def get_obs_rew(self, x):
+    def get_obs(self, x):
         out_obs = self.fc_obs_in(x)
         self.integration_time = self.integration_time.type_as(out_obs)
         out_obs = odeint(self.odefunc_obs, out_obs, self.integration_time, rtol=self.tol, atol=self.tol)[1]
         # out_obs = self.odefunc_obs(0, out_obs)
         out_obs = self.fc_state_out(out_obs)
 
-        out_rew = self.fc_rew_in(x)
-        out_rew = odeint(self.odefunc_rew, out_rew, self.integration_time, rtol=self.tol, atol=self.tol)[1]
-        # out_rew = self.odefunc_rew(0, out_rew)
-        out_rew = self.rew_block(out_rew)
-        out_rew = torch.max(out_rew, dim=1)[0]
-        out_rew = self.fc_rew_out(out_rew)[:, 0]
-        return out_obs, out_rew
+        return out_obs
 
-    def train_sampled_data(self, steps=2):
+    def train_sampled_obs(self, steps=2):
         x_all = torch.cat(self.train_data)
         obs_target_all = torch.cat(self.train_targets[0])
-        rew_target_all = torch.cat(self.train_targets[1])
         index = np.arange(len(x_all))
         for i in range(steps):
             self.optimizer.zero_grad()
             np.random.shuffle(index)
             index = index[0: self.args.batch_size]
             x = x_all[index]
-            out_obs, out_rew = self.get_obs_rew(x)
+            out_obs = self.get_obs(x)
             obs_target = obs_target_all[index]
-            rew_target = rew_target_all[index]
             loss_trans = self.args.loss_weight_trans * ((out_obs - obs_target) ** 2).mean()
-            loss_rew = self.args.loss_weight_rew * ((out_rew - rew_target) ** 2).mean()
-            loss = loss_trans + loss_rew
-            loss.backward()
+            loss_trans.backward()
             self.optimizer.step()
-            # print(loss.item())
 
-    def forward(self, obs, act, train=True, targets=None, **kwargs):
-        x = torch.tensor(np.concatenate((obs, act), axis=1)).float().to(self.device)
-        out_obs, out_rew = self.get_obs_rew(x)
+    def train_GBM(self):
+        lgb_train = lgb.Dataset(torch.cat(self.train_data).cpu().numpy(),
+                                label=torch.cat(self.train_targets[1]).cpu().numpy())
+        evals_result = {}
+        self.gbm_model = lgb.train(self.gbm_parameters,
+                                   lgb_train,
+                                   valid_sets=[lgb_train],
+                                   num_boost_round=2000,
+                                   early_stopping_rounds=100,
+                                   evals_result=evals_result,
+                                   verbose_eval=50)
+        return self.args.loss_weight_rew * np.mean(evals_result['training']['l2'])
+
+    def forward(self, obs, act, train=True, targets=None, step=-1, **kwargs):
+        concat_data = np.concatenate((obs, act), axis=1)
+        x = torch.tensor(concat_data).float().to(self.device)
+        out_obs = self.get_obs(x)
         if train:
             assert targets is not None
             loss_trans = self.args.loss_weight_trans * ((out_obs - targets[0]) ** 2).mean()
-            loss_rew = self.args.loss_weight_rew * ((out_rew - targets[1]) ** 2).mean()
+            loss_rew = 0
             self.train_data.append(x)
             self.train_targets[0].append(targets[0])
             self.train_targets[1].append(targets[1])
-            self.train_sampled_data()
-            return loss_trans.item(), loss_rew.item()
+            self.train_sampled_obs()
+            if step == 0:
+                loss_rew = self.train_GBM()
+            return loss_trans.item(), loss_rew
         else:
-            return out_obs.cpu().numpy(), out_rew.cpu().numpy()
+            assert self.gbm_model is not None
+            return out_obs.cpu().numpy(), self.gbm_model.predict(concat_data,
+                                                                          num_iteration=self.gbm_model.best_iteration)
 
     @property
     def nfe(self):
