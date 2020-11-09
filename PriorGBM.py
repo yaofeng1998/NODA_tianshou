@@ -52,11 +52,11 @@ class PriorGBM(nn.Module):
         out_obs = torch.stack((torch.cos(new_theta), torch.sin(new_theta), new_theta_dot), dim=1)
         return out_obs, theta
 
-    def train_sampled_trans(self, steps=10):
+    def train_sampled_trans(self):
         x_all = torch.tensor(np.concatenate(self.train_data)).float().to(self.device)
         obs_target_all = torch.tensor(np.concatenate(self.train_targets[0])).float().to(self.device)
         index = np.arange(len(x_all))
-        for i in range(steps):
+        for i in range(self.args.train_simulator_step):
             self.optimizer.zero_grad()
             np.random.shuffle(index)
             index = index[0: self.args.batch_size]

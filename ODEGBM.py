@@ -115,11 +115,11 @@ class ODEGBM(nn.Module):
 
         return out_obs
 
-    def train_sampled_obs(self, steps=2):
+    def train_sampled_obs(self):
         x_all = torch.cat(self.train_data)
         obs_target_all = torch.cat(self.train_targets[0])
         index = np.arange(len(x_all))
-        for i in range(steps):
+        for i in range(self.args.train_simulator_step):
             self.optimizer.zero_grad()
             np.random.shuffle(index)
             index = index[0: self.args.batch_size]

@@ -67,10 +67,27 @@ class BasicBlock(nn.Module):
         return x
 
 
-class ODENet(nn.Module):
+class FCBlock(nn.Module):
+
+    def __init__(self, args, original_dim=3, hidden_dim=2):
+        super(FCBlock, self).__init__()
+        self.args = args
+        self.fc1 = nn.Linear(original_dim, original_dim)
+        self.fc2 = nn.Linear(original_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.fc2(x)
+        # x = self.fc3(x)
+        return x
+
+
+class NODAE(nn.Module):
 
     def __init__(self, args, hidden_dim=20, tol=1e-3):
-        super(ODENet, self).__init__()
+        super(NODAE, self).__init__()
         self.args = args
         state_shape = args.state_shape
         action_shape = args.action_shape
@@ -82,6 +99,8 @@ class ODENet(nn.Module):
         self.action_shape = action_shape
         self.block_num = 2
         self.fc_obs_in = nn.Linear(state_shape + action_shape, hidden_dim)
+        self.encoder = FCBlock(args, original_dim=args.state_shape, hidden_dim=2)
+        self.decoder = FCBlock(args, original_dim=2, hidden_dim=args.state_shape)
         self.integration_time = torch.tensor([0, 1]).float()
         self.odefunc_obs = ODEfunc(hidden_dim)
         self.fc_state_out = nn.Linear(hidden_dim, state_shape)
@@ -101,11 +120,10 @@ class ODENet(nn.Module):
         self.optimizer = torch.optim.Adam(self.parameters(), lr=args.simulator_lr)
 
     def get_obs_rew(self, x):
-        out_obs = self.fc_obs_in(x)
-        self.integration_time = self.integration_time.type_as(out_obs)
-        out_obs = odeint(self.odefunc_obs, out_obs, self.integration_time, rtol=self.tol, atol=self.tol)[1]
-        # out_obs = self.odefunc_obs(0, out_obs)
-        out_obs = self.fc_state_out(out_obs)
+        latent_s = self.encoder(x[:, 0:self.state_shape])
+        self.integration_time = self.integration_time.to(args.device)
+        out_obs = odeint(self.odefunc_obs, latent_s, self.integration_time, rtol=self.tol, atol=self.tol)[1]
+        out_obs = self.decoder(out_obs)
 
         out_rew = self.fc_rew_in(x)
         out_rew = odeint(self.odefunc_rew, out_rew, self.integration_time, rtol=self.tol, atol=self.tol)[1]
@@ -130,7 +148,11 @@ class ODENet(nn.Module):
             rew_target = rew_target_all[index]
             loss_trans = self.args.loss_weight_trans * ((out_obs - obs_target) ** 2).mean()
             loss_rew = self.args.loss_weight_rew * ((out_rew - rew_target) ** 2).mean()
-            loss = loss_trans + loss_rew
+            decoded_s = self.decoder(self.encoder(x[:, 0:self.state_shape]))
+            loss_ae = self.args.loss_weight_trans * ((x[:, 0:self.state_shape] - decoded_s) ** 2).mean()
+            pdb.set_trace()
+            print(loss_trans.item(), loss_ae.item())
+            loss = loss_trans + loss_rew + loss_ae
             loss.backward()
             self.optimizer.step()
             # print(loss.item())

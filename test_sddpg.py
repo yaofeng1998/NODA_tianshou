@@ -20,12 +20,13 @@ from tianshou.utils.net.continuous import Actor, Critic
 from PriorGBM import PriorGBM
 from ODENet import ODENet
 from ODEGBM import ODEGBM
+from NODAE import NODAE
 
 
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--task', type=str, default='Pendulum-v0')
-    parser.add_argument('--model', type=str, default='ODEGBM')
+    parser.add_argument('--model', type=str, default='NODAE')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--buffer-size', type=int, default=20000)
     parser.add_argument('--actor-lr', type=float, default=1e-4)
@@ -46,7 +47,7 @@ def get_args():
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--layer-num', type=int, default=1)
     parser.add_argument('--training-num', type=int, default=8)
-    parser.add_argument('--test-num', type=int, default=8)
+    parser.add_argument('--test-num', type=int, default=100)
     parser.add_argument('--logdir', type=str, default='log')
     parser.add_argument('--render', type=float, default=0.)
     parser.add_argument('--rew-norm', type=int, default=1)
@@ -54,6 +55,7 @@ def get_args():
     parser.add_argument('--n-step', type=int, default=1)
     parser.add_argument('--white-box', action='store_true', default=False)
     parser.add_argument('--max-update-step', type=int, default=400)
+    parser.add_argument('--train-simulator-step', type=int, default=1)
     parser.add_argument('--trans-relative-noise', type=float, default=0.2)
     parser.add_argument(
         '--device', type=str,
@@ -109,6 +111,8 @@ def test_sddpg(args=get_args()):
     if args.model == 'ODEGBM':
         model = ODEGBM(args).to(args.device)
     elif args.model == 'PriorGBM':
+        model = PriorGBM(args).to(args.device)
+    elif args.model == 'NODAE':
         model = PriorGBM(args).to(args.device)
     else:
         assert args.model == 'ODENet'
