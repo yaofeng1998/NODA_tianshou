@@ -96,3 +96,7 @@ class PixelHNN(torch.nn.Module):
         z = self.encode(x)
         z_next = z + self.time_derivative(z)
         return self.decode(z_next)
+
+    def get_l2_loss(self, x, targets):
+        pred = self.forward(x)
+        return ((pred - targets) ** 2).mean(dim=1).detach()
