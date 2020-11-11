@@ -33,7 +33,7 @@ def get_args():
     parser.add_argument('--input_noise', default=0.0, type=float, help='std of noise added to HNN inputs')
     parser.add_argument('--batch_size', default=200, type=int, help='batch size')
     parser.add_argument('--nonlinearity', default='tanh', type=str, help='neural net nonlinearity')
-    parser.add_argument('--total_steps', default=800, type=int, help='number of gradient steps')
+    parser.add_argument('--total_steps', default=10000, type=int, help='number of gradient steps')
     parser.add_argument('--print_every', default=200, type=int, help='number of gradient steps between prints')
     parser.add_argument('--verbose', dest='verbose', action='store_true', help='verbose?')
     parser.add_argument('--name', default='pixels', type=str, help='either "real" or "sim" data')
@@ -99,8 +99,8 @@ def train_hnn(args):
 
     # vanilla ae train loop
     stats = {'train_loss': [], 'test_loss': []}
-    with tqdm(total=args.total_steps + 1) as t:
-        for step in range(args.total_steps + 1):
+    with tqdm(total=args.total_steps) as t:
+        for step in range(args.total_steps):
             # train step
             ixs = torch.randperm(x.shape[0])[:args.batch_size]
             loss = pixelhnn_loss(x[ixs], next_x[ixs], model)
@@ -157,8 +157,8 @@ def train_NODAE(args):
         test_next_x = test_next_x.cuda()
     # vanilla ae train loop
     stats = {'train_loss': [], 'test_loss': []}
-    with tqdm(total=args.total_steps + 1) as t:
-        for step in range(args.total_steps + 1):
+    with tqdm(total=args.total_steps) as t:
+        for step in range(args.total_steps):
             # train step
             ixs = torch.randperm(x.shape[0])[:args.batch_size]
             loss = model.forward_train(x[ixs], next_x[ixs])
@@ -185,7 +185,7 @@ def train_NODAE(args):
     return model, stats
 
 
-def plot_results(stats_hnn, stats_NODAE, total_length=None):
+def plot_results(args, stats_hnn, stats_NODAE, total_length=None):
     hnn_train_mean, hnn_train_std, hnn_test_mean, hnn_test_std = tuple(stats_hnn)
     NODAE_train_mean, NODAE_train_std, NODAE_test_mean, NODAE_test_std = tuple(stats_NODAE)
     step = np.arange(1, len(hnn_train_mean) + 1)
@@ -214,7 +214,7 @@ def plot_results(stats_hnn, stats_NODAE, total_length=None):
     axes[0].set_ylabel('Loss')
     axes[0].legend(loc='best')
     axes[1].legend(loc='best')
-    plt.savefig("HNN-NODAE-comparison.pdf")
+    plt.savefig("HNN-NODAE-comparison_" + str(args.latent_dim) + "_" + str(len(step)) + ".pdf")
     plt.close()
 
 
@@ -249,4 +249,4 @@ if __name__ == "__main__":
         except:
             stats_hnn, stats_NODAE = train(args)
             np.savez('results.npz', stats_hnn=stats_hnn, stats_NODAE=stats_NODAE)
-    plot_results(stats_hnn, stats_NODAE)
+    plot_results(args, stats_hnn, stats_NODAE)

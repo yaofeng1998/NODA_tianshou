@@ -91,7 +91,7 @@ class NODAE(nn.Module):
             x = self.ae_obs.encode(x)
             x = odeint(self.odefunc_obs, x, self.integration_time, rtol=self.tol, atol=self.tol)[1]
             x = self.ae_obs.decode(x)
-            loss = ((x - targets) ** 2).mean() + 1e-3 * ((self.ae_obs(x) - x) ** 2).mean()
+            loss = ((x - targets) ** 2).mean() + 5e-2 * ((self.ae_obs(x) - x) ** 2).mean()
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
