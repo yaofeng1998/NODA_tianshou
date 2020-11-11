@@ -214,7 +214,7 @@ def plot_results(args, stats_hnn, stats_NODAE, total_length=None):
     axes[0].set_ylabel('Loss')
     axes[0].legend(loc='best')
     axes[1].legend(loc='best')
-    plt.savefig("HNN-NODAE-comparison_" + str(args.latent_dim) + "_" + str(len(step)) + ".pdf")
+    plt.savefig('HNN-NODAE-comparison_' + str(args.latent_dim) + '_' + str(len(step)) + '.pdf')
     plt.close()
 
 
@@ -240,13 +240,16 @@ if __name__ == "__main__":
     plt.rc('font', size=14)
     if args.retrain:
         stats_hnn, stats_NODAE = train(args)
-        np.savez('results.npz', stats_hnn=stats_hnn, stats_NODAE=stats_NODAE)
+        np.savez('results_' + str(args.latent_dim) + '_' + str(args.total_steps) + '.npz',
+                 stats_hnn=stats_hnn, stats_NODAE=stats_NODAE)
     else:
         try:
-            results = np.load('results.npz', allow_pickle=True)
+            results = np.load('results_' + str(args.latent_dim) + '_' + str(args.total_steps) + '.npz',
+                              allow_pickle=True)
             stats_hnn = results['stats_hnn']
             stats_NODAE = results['stats_NODAE']
         except:
             stats_hnn, stats_NODAE = train(args)
-            np.savez('results.npz', stats_hnn=stats_hnn, stats_NODAE=stats_NODAE)
+            np.savez('results_' + str(args.latent_dim) + '_' + str(args.total_steps) + '.npz',
+                     stats_hnn=stats_hnn, stats_NODAE=stats_NODAE)
     plot_results(args, stats_hnn, stats_NODAE)
