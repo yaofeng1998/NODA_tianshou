@@ -113,7 +113,7 @@ def test_sddpg(args=get_args()):
     elif args.model == 'PriorGBM':
         model = PriorGBM(args).to(args.device)
     elif args.model == 'NODAE':
-        model = PriorGBM(args).to(args.device)
+        model = NODAE(args).to(args.device)
     else:
         assert args.model == 'ODENet'
         model = ODENet(args).to(args.device)

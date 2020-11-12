@@ -16,6 +16,7 @@ from PriorGBM import PriorGBM
 from ODENet import ODENet
 from ODEGBM import ODEGBM
 from NODAE import NODAE
+import pdb
 
 
 def get_args():
@@ -100,7 +101,6 @@ def test_sac_bipedal(args=get_args()):
     # test_envs = gym.make(args.task)
     test_envs = SubprocVectorEnv([lambda: EnvWrapper(args.task, reward_scale=1)
                                   for _ in range(args.test_num)])
-
     # seed
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -128,7 +128,7 @@ def test_sac_bipedal(args=get_args()):
     elif args.model == 'PriorGBM':
         model = PriorGBM(args).to(args.device)
     elif args.model == 'NODAE':
-        model = PriorGBM(args).to(args.device)
+        model = NODAE(args).to(args.device)
     else:
         assert args.model == 'ODENet'
         model = ODENet(args).to(args.device)
