@@ -206,7 +206,7 @@ def plot_results(args, stats_hnn, stats_NODAE, total_length=None):
     axes[0].fill_between(step, hnn_train_mean - hnn_train_std, hnn_train_mean + hnn_train_std, alpha=0.3)
     axes[0].fill_between(step, NODAE_train_mean - NODAE_train_std, NODAE_train_mean + NODAE_train_std, alpha=0.3)
     axes[1].semilogy(step, hnn_test_mean, label="HNN (testing)")
-    axes[1].semilogy(step, NODAE_test_mean, label="NODAE (training)")
+    axes[1].semilogy(step, NODAE_test_mean, label="NODAE (testing)")
     axes[1].fill_between(step, hnn_test_mean - hnn_test_std, hnn_test_mean + hnn_test_std, alpha=0.3)
     axes[1].fill_between(step, NODAE_test_mean - NODAE_test_std, NODAE_test_mean + NODAE_test_std, alpha=0.3)
     axes[0].set_xlabel('Step')
