@@ -211,8 +211,7 @@ class SSACPolicy(DDPGPolicy):
 
         result = {
             "la": actor_loss.item(),
-            "lc1": critic1_loss.item(),
-            "lc2": critic2_loss.item(),
+            "lc": (critic1_loss.item() + critic2_loss.item()) / 2.0,
         }
         if self._is_auto_alpha:
             result["lal"] = alpha_loss.item()
@@ -258,8 +257,7 @@ class SSACPolicy(DDPGPolicy):
 
             result = {
                 "la": actor_loss.item(),
-                "lc1": critic1_loss.item(),
-                "lc2": critic2_loss.item(),
+                "lc": (critic1_loss.item() + critic2_loss.item()) / 2.0,
             }
         if self._is_auto_alpha:
             result["lal"] = alpha_loss.item()
@@ -278,8 +276,7 @@ class SSACPolicy(DDPGPolicy):
             # result["l"] = self.simulator.l
             # result["g"] = self.simulator.g
             # result["dt"] = self.simulator.dt
-            self.loss_history.append([simulator_loss[0], simulator_loss[1], result["la"],
-                                      (result["lc1"] + result["lc2"]) / 2, 0, 0])
+            self.loss_history.append([simulator_loss[0], simulator_loss[1], result["la"], result["lc"], 0, 0])
         else:
             result = self.get_loss_batch(batch)
             if kwargs['i'] == 0 or self.simulator_buffer._size < self.args.batch_size:
@@ -288,10 +285,9 @@ class SSACPolicy(DDPGPolicy):
             simulation_batch = self.process_fn(simulation_batch, self.simulator_buffer, indice)
             simulator_result = self.learn_batch(simulation_batch)
             self.post_process_fn(simulation_batch, self.simulator_buffer, indice)
-            result["las"] = simulator_result["la"]
-            result["lcs"] = (simulator_result["lc1"] + simulator_result["lc2"]) / 2
-            self.loss_history.append([0, 0, result["la"], (result["lc1"] + result["lc2"]) / 2,
-                                      result["las"], result["lcs"]])
+            result["la2"] = simulator_result["la"]
+            result["lc2"] = simulator_result["lc"]
+            self.loss_history.append([0, 0, result["la"], result["lc"], result["la2"], result["lc2"]])
         return result
 
     def simulate_environment(self):

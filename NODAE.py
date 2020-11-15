@@ -116,7 +116,7 @@ class NODAE(nn.Module):
         out_obs = odeint(odefunc, latent_s, self.integration_time, rtol=self.tol, atol=self.tol)[1]
         out_obs = self.ae.decode(out_obs)
         recon_obs = self.ae.decode(latent_s)
-        out_rew = self.rew_nn(torch.cat((latent_s, x[:, self.state_shape:]), dim=1)).squeeze(-1)
+        out_rew = self.rew_nn(torch.cat((latent_s.detach(), x[:, self.state_shape:]), dim=1)).squeeze(-1)
         return out_obs, out_rew, recon_obs
 
     def train_sampled_data(self):

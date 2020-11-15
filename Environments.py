@@ -43,6 +43,8 @@ class PendulumEnv(gym.Env):
         return [seed]
 
     def step(self, u):
+        self.current_step += 1
+        assert self.current_step <= self.max_step
         th, thdot = self.state[:, 0], self.state[:, 1]  # th := theta
 
         g = self.g
@@ -60,10 +62,8 @@ class PendulumEnv(gym.Env):
         self.state = np.stack((newth, newthdot), axis=1)
         if self.current_step == self.max_step:
             done = np.array([True] * self.batch_size)
-            self.current_step += 1
         else:
             done = np.array([False] * self.batch_size)
-            self.current_step += 1
         return self._get_obs(), -costs, done, {}
 
     def reset(self):
@@ -104,13 +104,12 @@ class SimulationEnv(gym.Env):
     def step(self, action):
         with torch.no_grad():
             obs, rew = self.model(self.obs, action, white_box=self.white_box, train=False)
+        self.current_step += 1
         assert self.current_step <= self.max_step
         if self.current_step == self.max_step:
             done = np.array([True] * self.batch_size)
-            self.current_step += 1
         else:
             done = np.array([False] * self.batch_size)
-            self.current_step += 1
         info = {}
         self.obs = obs
         return self.obs, rew, done, info
