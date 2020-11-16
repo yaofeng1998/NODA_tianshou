@@ -1,9 +1,18 @@
 import sys
 import os
 import numpy as np
+import argparse
+import gym
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing import event_accumulator
 import pdb
+
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--task', type=str, default='Pendulum-v0')
+    args = parser.parse_known_args()[0]
+    return args
 
 
 def sort_file_by_time(file_path):
@@ -15,8 +24,12 @@ def sort_file_by_time(file_path):
         return files
 
 
-def main():
-    log_dir = 'log/Pendulum-v0/sac/'
+def main(args=get_args()):
+    env = gym.make(args.task)
+    if args.task == 'Pendulum-v0':
+        env.spec.reward_threshold = -250
+    reward_threshold = env.spec.reward_threshold
+    log_dir = 'log/' + args.task + '/sac/'
     files = sort_file_by_time(log_dir)[-2:]
     files = files[::-1]
     ea_sac = event_accumulator.EventAccumulator(log_dir + files[0])
@@ -54,15 +67,22 @@ def main():
     rew_ssac_std = np.array(rew_ssac_std)
 
     fig, ax = plt.subplots(figsize=(6, 5))
-    ax.plot(step_sac, rew_sac_mean, label="SAC")
+    ax.plot(step_sac, rew_sac_mean, label='SAC')
     ax.fill_between(step_sac, rew_sac_mean - rew_sac_std, rew_sac_mean + rew_sac_std, alpha=0.3)
-    ax.plot(step_ssac, rew_ssac_mean, label="NODAE-SAC")
+    ax.plot(step_ssac, rew_ssac_mean, label='NODAE-SAC')
     ax.fill_between(step_ssac, rew_ssac_mean - rew_ssac_std, rew_ssac_mean + rew_ssac_std, alpha=0.3)
-    pdb.set_trace()
+
+    if len(step_sac) > len(step_ssac):
+        step = step_sac
+    else:
+        step = step_ssac
+    reward_threshold = np.ones(len(step)) * reward_threshold
+    ax.plot(step, reward_threshold, label='Threshold', linestyle='--')
+
     ax.set_xlabel('Step')
     ax.set_ylabel('Reward')
     ax.legend(loc='best')
-    plt.savefig('SAC-NODAE-comparison.pdf')
+    plt.savefig('SAC-NODAE-comparison-' + args.task + '.pdf')
     plt.close()
 
 

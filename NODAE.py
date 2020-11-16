@@ -109,7 +109,7 @@ class NODAE(nn.Module):
         self.tol = tol
         self.train_data = []
         self.train_targets = [[], []]
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=args.simulator_lr)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=args.simulator_lr, weight_decay=1e-5)
 
     def get_obs_rew(self, x):
         latent_s = self.ae.encode(x[:, 0:self.state_shape])
@@ -119,7 +119,7 @@ class NODAE(nn.Module):
         out_obs = odeint(odefunc, latent_s, self.integration_time, rtol=self.tol, atol=self.tol)[1]
         out_obs = self.ae.decode(out_obs)
         recon_obs = self.ae.decode(latent_s)
-        out_rew = self.rew_nn(torch.cat((latent_s.detach(), x[:, self.state_shape:]), dim=1)).squeeze(-1)
+        out_rew = self.rew_nn(torch.cat((latent_s, x[:, self.state_shape:]), dim=1)).squeeze(-1)
         return out_obs, out_rew, recon_obs
 
     def train_sampled_data(self):
@@ -144,27 +144,20 @@ class NODAE(nn.Module):
             self.optimizer.step()
             # print(loss.item())
 
-    def train_sampled_data_rew(self, train_num=100):
-        x_all = torch.cat(self.train_data)
-        rew_target_all = torch.cat(self.train_targets[1])
-        index = np.arange(len(x_all))
-        with tqdm(total=train_num, desc='Training reward') as t:
-            for i in range(train_num):
-                self.optimizer.zero_grad()
-                np.random.shuffle(index)
-                index = index[0: self.args.batch_size]
-                x = x_all[index]
-                _, out_rew, __ = self.get_obs_rew(x)
-                rew_target = rew_target_all[index]
-                loss_rew = self.args.loss_weight_rew * ((out_rew - rew_target) ** 2).mean()
-                loss_rew.backward()
-                self.optimizer.step()
-                t.set_postfix(lr=loss_rew.item())
-                t.update(1)
-
     def forward(self, obs, act, train=True, targets=None, **kwargs):
+        if self.args.task == 'Pendulum-v0':
+            act = np.clip(act, -2, 2)
         x = torch.tensor(np.concatenate((obs, act), axis=1)).float().to(self.device)
         out_obs, out_rew, recon_obs = self.get_obs_rew(x)
+        if self.args.task == 'Pendulum-v0':
+            out_obs_norm = out_obs[:, 0] ** 2 + out_obs[:, 1] ** 2 + np.finfo(np.float32).eps
+            out_obs[:, 0] /= out_obs_norm
+            out_obs[:, 1] /= out_obs_norm
+            out_obs[:, 2] = torch.clamp(out_obs[:, 2], -8, 8)
+            recon_obs_norm = recon_obs[:, 0] ** 2 + recon_obs[:, 1] ** 2 + np.finfo(np.float32).eps
+            recon_obs[:, 0] /= recon_obs_norm
+            recon_obs[:, 1] /= recon_obs_norm
+            recon_obs[:, 2] = torch.clamp(recon_obs[:, 2], -8, 8)
         if train:
             assert targets is not None
             tensor_obs = torch.tensor(obs).to(self.device)

@@ -93,12 +93,21 @@ class SimulationEnv(gym.Env):
         self.max_step = args.n_simulator_step
         self.current_step = 0
         self.batch_size = 8 #args.batch_size
+        self.task = args.task
+        self.original_env = gym.make(self.task)
+
+    # def reset_pendulum_v0(self):
+    #     high = np.array([np.pi, 1])
+    #     temp = np.random.rand(self.batch_size, *high.shape) * 2 * high - high
+    #     self.obs = np.stack((np.cos(temp[:, 0]), np.sin(temp[:, 0]), temp[:, 1]), axis=1)
+    #     self.current_step = 0
+    #     return self.obs
 
     def reset(self):
-        high = np.array([np.pi, 1])
-        temp = np.random.rand(self.batch_size, *high.shape) * 2 * high - high
-        self.obs = np.stack((np.cos(temp[:, 0]), np.sin(temp[:, 0]), temp[:, 1]), axis=1)
-        self.current_step = 0
+        obs = []
+        for i in range(self.batch_size):
+            obs.append(self.original_env.reset())
+        self.obs = np.stack(obs, axis=0)
         return self.obs
 
     def step(self, action):
