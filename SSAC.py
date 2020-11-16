@@ -279,6 +279,8 @@ class SSACPolicy(DDPGPolicy):
             self.loss_history.append([simulator_loss[0], simulator_loss[1], result["la"], result["lc"], 0, 0])
         else:
             result = self.get_loss_batch(batch)
+            if self.simulator_buffer._size < self.args.batch_size and hasattr(self.simulator, 'train_sampled_data_rew'):
+                self.simulator.train_sampled_data_rew()
             if kwargs['i'] == 0 or self.simulator_buffer._size < self.args.batch_size:
                 self.simulate_environment()
             simulation_batch, indice = self.simulator_buffer.sample(self.args.batch_size)

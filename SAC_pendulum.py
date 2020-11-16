@@ -43,7 +43,8 @@ def get_args():
     parser.add_argument('--ignore-done', type=int, default=1)
     parser.add_argument('--n-step', type=int, default=4)
     parser.add_argument('--train-simulator-step', type=int, default=2)
-    parser.add_argument('--simulator-hidden-dim', type=int, default=128)
+    parser.add_argument('--simulator-latent-dim', type=int, default=20)
+    parser.add_argument('--simulator-hidden-dim', type=int, default=20)
     parser.add_argument('--simulator-lr', type=float, default=1e-2)
     parser.add_argument('--model', type=str, default='NODAE')
     parser.add_argument('--simulator-loss-threshold', type=float, default=0)
@@ -59,7 +60,7 @@ def get_args():
     return args
 
 
-def test_ssac(args=get_args()):
+def test_sac(args=get_args()):
     torch.set_num_threads(1)  # we just need only one thread for NN
     env = gym.make(args.task)
     if args.task == 'Pendulum-v0':
@@ -144,4 +145,4 @@ def test_ssac(args=get_args()):
 
 
 if __name__ == '__main__':
-    test_ssac()
+    test_sac()

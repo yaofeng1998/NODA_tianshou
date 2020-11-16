@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torchdiffeq import odeint
+from tqdm import tqdm
 import pdb
 
 
@@ -87,7 +88,7 @@ class MLPAutoencoder(torch.nn.Module):
 
 class NODAE(nn.Module):
 
-    def __init__(self, args, hidden_dim=20, tol=1e-3):
+    def __init__(self, args, tol=1e-3):
         super(NODAE, self).__init__()
         self.args = args
         state_shape = args.state_shape
@@ -98,10 +99,12 @@ class NODAE(nn.Module):
             action_shape = action_shape[0]
         self.state_shape = state_shape
         self.action_shape = action_shape
-        self.ae = MLPAutoencoder(state_shape, hidden_dim, hidden_dim, nonlinearity='relu')
+        self.latent_dim = args.simulator_latent_dim
+        self.hidden_dim = args.simulator_hidden_dim
+        self.ae = MLPAutoencoder(state_shape, self.hidden_dim, self.latent_dim, nonlinearity='relu')
         self.integration_time = torch.tensor([0, 1]).float()
-        self.odefunc = MLP(hidden_dim + action_shape, hidden_dim, hidden_dim)
-        self.rew_nn = MLP(hidden_dim + action_shape, hidden_dim, 1)
+        self.odefunc = MLP(self.latent_dim + action_shape, self.hidden_dim, self.latent_dim)
+        self.rew_nn = MLP(self.latent_dim + action_shape, self.hidden_dim, 1)
         self.device = args.device
         self.tol = tol
         self.train_data = []
@@ -140,6 +143,24 @@ class NODAE(nn.Module):
             loss.backward()
             self.optimizer.step()
             # print(loss.item())
+
+    def train_sampled_data_rew(self, train_num=100):
+        x_all = torch.cat(self.train_data)
+        rew_target_all = torch.cat(self.train_targets[1])
+        index = np.arange(len(x_all))
+        with tqdm(total=train_num, desc='Training reward') as t:
+            for i in range(train_num):
+                self.optimizer.zero_grad()
+                np.random.shuffle(index)
+                index = index[0: self.args.batch_size]
+                x = x_all[index]
+                _, out_rew, __ = self.get_obs_rew(x)
+                rew_target = rew_target_all[index]
+                loss_rew = self.args.loss_weight_rew * ((out_rew - rew_target) ** 2).mean()
+                loss_rew.backward()
+                self.optimizer.step()
+                t.set_postfix(lr=loss_rew.item())
+                t.update(1)
 
     def forward(self, obs, act, train=True, targets=None, **kwargs):
         x = torch.tensor(np.concatenate((obs, act), axis=1)).float().to(self.device)
