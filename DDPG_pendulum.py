@@ -10,7 +10,7 @@ from torchviz import make_dot
 import matplotlib.pyplot as plt
 import time
 
-from sddpg import SDDPGPolicy
+from SDDPG import SDDPGPolicy
 from tianshou.env import DummyVectorEnv
 from tianshou.utils.net.common import Net
 from tianshou.trainer import offpolicy_trainer
@@ -55,7 +55,7 @@ def get_args():
     parser.add_argument('--n-step', type=int, default=1)
     parser.add_argument('--white-box', action='store_true', default=False)
     parser.add_argument('--max-update-step', type=int, default=400)
-    parser.add_argument('--train-simulator-step', type=int, default=1)
+    parser.add_argument('--train-simulator-step', type=int, default=2)
     parser.add_argument('--trans-relative-noise', type=float, default=0.2)
     parser.add_argument(
         '--device', type=str,

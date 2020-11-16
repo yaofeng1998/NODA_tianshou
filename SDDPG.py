@@ -18,7 +18,7 @@ import argparse
 
 
 class SDDPGPolicy(BasePolicy):
-    """Implementation of Deep Deterministic Policy Gradient. arXiv:1509.02971.
+    """Implementation of Simulator-based Deep Deterministic Policy Gradient.
     We combine DDPG with a model-based simulator.
 
     :param torch.nn.Module actor: the actor network following the rules in

@@ -16,7 +16,7 @@ import argparse
 
 
 class SSACPolicy(DDPGPolicy):
-    """Implementation of Soft Actor-Critic. arXiv:1812.05905.
+    """Implementation of Simulator-based Soft Actor-Critic.
     :param torch.nn.Module actor: the actor network following the rules in
         :class:`~tianshou.policy.BasePolicy`. (s -> logits)
     :param torch.optim.Optimizer actor_optim: the optimizer for actor network.
