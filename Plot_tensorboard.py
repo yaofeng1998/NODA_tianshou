@@ -30,9 +30,8 @@ def main(args=get_args()):
         env.spec.reward_threshold = -250
     reward_threshold = env.spec.reward_threshold
     log_dir = 'log/' + args.task + '/sac/'
-    files = sort_file_by_time(log_dir)[-2:]
-    files = files[::-1]
-    ea_sac = event_accumulator.EventAccumulator(log_dir + files[0])
+    newest_file_baseline = sort_file_by_time(log_dir + 'baseline/')[-1]
+    ea_sac = event_accumulator.EventAccumulator(log_dir + 'baseline/' + newest_file_baseline)
     ea_sac.Reload()
     # print(ea_sac.scalars.Keys())
     rew_sac_item_mean = ea_sac.scalars.Items('train/rew')
@@ -46,7 +45,8 @@ def main(args=get_args()):
         rew_sac_mean.append(rew_sac_item_mean[i].value)
         rew_sac_std.append(rew_sac_item_std[i].value)
 
-    ea_ssac = event_accumulator.EventAccumulator(log_dir + files[1])
+    newest_file = sort_file_by_time(log_dir)[-1]
+    ea_ssac = event_accumulator.EventAccumulator(log_dir + newest_file)
     ea_ssac.Reload()
     rew_ssac_item_mean = ea_ssac.scalars.Items('train/rew')
     rew_ssac_item_std = ea_ssac.scalars.Items('train/rew_std')

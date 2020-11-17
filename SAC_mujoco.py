@@ -16,6 +16,7 @@ from PriorGBM import PriorGBM
 from ODENet import ODENet
 from ODEGBM import ODEGBM
 from NODAE import NODAE
+from Plot_tensorboard import sort_file_by_time
 import pdb
 
 
@@ -44,25 +45,30 @@ def get_args():
     parser.add_argument('--test-num', type=int, default=100)
     parser.add_argument('--logdir', type=str, default='log')
     parser.add_argument('--render', type=float, default=0.)
-    parser.add_argument('--log-interval', type=int, default=1000)
+    parser.add_argument('--log-interval', type=int, default=1)
     parser.add_argument('--train-simulator-step', type=int, default=3)
-    parser.add_argument('--simulator-latent-dim', type=int, default=16)
-    parser.add_argument('--simulator-hidden-dim', type=int, default=256)
+    parser.add_argument('--simulator-latent-dim', type=int, default=8)
+    parser.add_argument('--simulator-hidden-dim', type=int, default=128)
     parser.add_argument('--simulator-lr', type=float, default=1e-3)
     parser.add_argument('--model', type=str, default='NODAE')
-    parser.add_argument('--simulator-loss-threshold', type=float, default=0)
     parser.add_argument('--max-update-step', type=int, default=400)
     parser.add_argument('--white-box', action='store_true', default=False)
     parser.add_argument('--loss-weight-trans', type=float, default=1)
+    parser.add_argument('--loss-weight-ae', type=float, default=1)
     parser.add_argument('--loss-weight-rew', type=float, default=1)
     parser.add_argument('--n-simulator-step', type=int, default=1000)
+    parser.add_argument('--baseline', action='store_true', default=False)
     parser.add_argument(
         '--device', type=str,
         default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--resume-path', type=str, default=None)
     parser.add_argument('--watch', default=False, action='store_true',
                         help='watch the play of pre-trained policy only')
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.baseline:
+        args.train_simulator_step = 0
+        args.max_update_step = 2 * args.epoch * args.step_per_epoch + 1
+    return args
 
 
 def test_sac(args=get_args()):
@@ -142,7 +148,12 @@ def test_sac(args=get_args()):
     test_collector = Collector(policy, test_envs)
     # log
     log_path = os.path.join(args.logdir, args.task, 'sac')
-    writer = SummaryWriter(log_path)
+    if args.baseline:
+        if not os.path.exists(log_path + '/baseline/'):
+            os.makedirs(log_path + '/baseline/')
+        writer = SummaryWriter(log_path + '/baseline')
+    else:
+        writer = SummaryWriter(log_path)
 
     def watch():
         # watch agent's performance
@@ -174,7 +185,7 @@ def test_sac(args=get_args()):
         stop_fn=stop_fn, save_fn=save_fn, writer=writer,
         log_interval=args.log_interval)
     pprint.pprint(result)
-    watch()
+    # watch()
 
 
 if __name__ == '__main__':

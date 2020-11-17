@@ -16,6 +16,7 @@ from PriorGBM import PriorGBM
 from ODENet import ODENet
 from ODEGBM import ODEGBM
 from NODAE import NODAE
+from Plot_tensorboard import sort_file_by_time
 import pdb
 
 
@@ -47,16 +48,20 @@ def get_args():
     parser.add_argument('--simulator-hidden-dim', type=int, default=128)
     parser.add_argument('--simulator-lr', type=float, default=1e-3)
     parser.add_argument('--model', type=str, default='NODAE')
-    parser.add_argument('--simulator-loss-threshold', type=float, default=0)
     parser.add_argument('--max-update-step', type=int, default=400)
     parser.add_argument('--white-box', action='store_true', default=False)
     parser.add_argument('--loss-weight-trans', type=float, default=1)
+    parser.add_argument('--loss-weight-ae', type=float, default=1)
     parser.add_argument('--loss-weight-rew', type=float, default=1)
     parser.add_argument('--n-simulator-step', type=int, default=200)
+    parser.add_argument('--baseline', action='store_true', default=False)
     parser.add_argument(
         '--device', type=str,
         default='cuda' if torch.cuda.is_available() else 'cpu')
     args = parser.parse_known_args()[0]
+    if args.baseline:
+        args.train_simulator_step = 0
+        args.max_update_step = 2 * args.epoch * args.step_per_epoch + 1
     return args
 
 
@@ -119,7 +124,12 @@ def test_sac(args=get_args()):
     # train_collector.collect(n_step=args.buffer_size)
     # log
     log_path = os.path.join(args.logdir, args.task, 'sac')
-    writer = SummaryWriter(log_path)
+    if args.baseline:
+        if not os.path.exists(log_path + '/baseline/'):
+            os.makedirs(log_path + '/baseline/')
+        writer = SummaryWriter(log_path + '/baseline')
+    else:
+        writer = SummaryWriter(log_path)
 
     def save_fn(policy):
         # torch.save(policy.state_dict(), os.path.join(log_path, 'policy.pth'))

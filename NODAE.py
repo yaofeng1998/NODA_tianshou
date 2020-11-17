@@ -137,7 +137,7 @@ class NODAE(nn.Module):
             obs_target = obs_target_all[index]
             rew_target = rew_target_all[index]
             loss_trans = self.args.loss_weight_trans * ((out_obs - obs_target) ** 2).mean()
-            loss_ae = self.args.loss_weight_trans * ((recon_obs - obs) ** 2).mean()
+            loss_ae = self.args.loss_weight_ae * ((recon_obs - obs) ** 2).mean()
             loss_rew = self.args.loss_weight_rew * ((out_rew - rew_target) ** 2).mean()
             loss = loss_trans + loss_rew + loss_ae
             loss.backward()
@@ -162,12 +162,12 @@ class NODAE(nn.Module):
             assert targets is not None
             tensor_obs = torch.tensor(obs).to(self.device)
             loss_trans = self.args.loss_weight_trans * ((out_obs - targets[0]) ** 2).mean()
-            loss_trans += self.args.loss_weight_trans * ((recon_obs - tensor_obs) ** 2).mean()
+            loss_ae = self.args.loss_weight_ae * ((recon_obs - tensor_obs) ** 2).mean()
             loss_rew = self.args.loss_weight_rew * ((out_rew - targets[1]) ** 2).mean()
             self.train_data.append(x)
             self.train_targets[0].append(targets[0])
             self.train_targets[1].append(targets[1])
             self.train_sampled_data()
-            return loss_trans.item(), loss_rew.item()
+            return (loss_trans + loss_ae).item(), loss_rew.item()
         else:
             return out_obs.cpu().numpy(), out_rew.cpu().numpy()

@@ -81,7 +81,6 @@ class SSACPolicy(DDPGPolicy):
             self.simulator = simulator
         self.args = args
         self.simulation_env = None
-        self.simulator_loss_threshold = self.args.simulator_loss_threshold
         self.loss_history = []
         self.gbm_model = None
         self.update_step = self.args.max_update_step
