@@ -150,6 +150,7 @@ class NODAE(nn.Module):
         x = torch.tensor(np.concatenate((obs, act), axis=1)).float().to(self.device)
         out_obs, out_rew, recon_obs = self.get_obs_rew(x)
         if self.args.task == 'Pendulum-v0':
+            # pass
             out_obs_norm = out_obs[:, 0] ** 2 + out_obs[:, 1] ** 2 + np.finfo(np.float32).eps
             out_obs[:, 0] /= out_obs_norm
             out_obs[:, 1] /= out_obs_norm

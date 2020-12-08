@@ -93,6 +93,7 @@ class SSACPolicy(DDPGPolicy):
         self.critic2, self.critic2_old = critic2, deepcopy(critic2)
         self.critic2_old.eval()
         self.critic2_optim = critic2_optim
+        self.start_simulation = False
 
         self._is_auto_alpha = False
         self._alpha: Union[float, torch.Tensor]
@@ -267,6 +268,8 @@ class SSACPolicy(DDPGPolicy):
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
         if self.update_step > 0:
             self.update_step -= 1
+            batch.obs += self.args.noise_obs * np.random.randn(*np.shape(batch.obs))
+            batch.rew += self.args.noise_rew * np.random.randn(*np.shape(batch.rew))
             simulator_loss = self.learn_simulator(batch)
             result = self.learn_batch(batch)
             result["lt"] = simulator_loss[0]
@@ -277,6 +280,9 @@ class SSACPolicy(DDPGPolicy):
             # result["dt"] = self.simulator.dt
             self.loss_history.append([simulator_loss[0], simulator_loss[1], result["la"], result["lc"], 0, 0])
         else:
+            if not self.start_simulation:
+                kwargs['writer'].add_scalar('simulator/start_step', kwargs['env_step'], global_step=kwargs['env_step'])
+                self.start_simulation = True
             result = self.get_loss_batch(batch)
             if kwargs['i'] == 0 or self.simulator_buffer._size < self.args.batch_size:
                 self.simulate_environment()

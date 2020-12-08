@@ -53,6 +53,8 @@ def get_args():
     parser.add_argument('--loss-weight-trans', type=float, default=1)
     parser.add_argument('--loss-weight-ae', type=float, default=1)
     parser.add_argument('--loss-weight-rew', type=float, default=1)
+    parser.add_argument('--noise-obs', type=float, default=0.2)
+    parser.add_argument('--noise-rew', type=float, default=0)
     parser.add_argument('--n-simulator-step', type=int, default=200)
     parser.add_argument('--baseline', action='store_true', default=False)
     parser.add_argument(

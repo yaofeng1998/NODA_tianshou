@@ -34,7 +34,7 @@ def get_args():
     parser.add_argument('--alpha-lr', type=float, default=3e-4)
     parser.add_argument('--n-step', type=int, default=2)
     parser.add_argument('--epoch', type=int, default=1)
-    parser.add_argument('--step-per-epoch', type=int, default=2000)
+    parser.add_argument('--step-per-epoch', type=int, default=50000)
     parser.add_argument('--collect-per-step', type=int, default=4)
     parser.add_argument('--update-per-step', type=int, default=1)
     parser.add_argument('--pre-collect-step', type=int, default=10000)
@@ -56,7 +56,9 @@ def get_args():
     parser.add_argument('--loss-weight-trans', type=float, default=1)
     parser.add_argument('--loss-weight-ae', type=float, default=1)
     parser.add_argument('--loss-weight-rew', type=float, default=1)
-    parser.add_argument('--n-simulator-step', type=int, default=1000)
+    parser.add_argument('--noise-obs', type=float, default=0.0)
+    parser.add_argument('--noise-rew', type=float, default=0.0)
+    parser.add_argument('--n-simulator-step', type=int, default=1200)
     parser.add_argument('--baseline', action='store_true', default=False)
     parser.add_argument(
         '--device', type=str,

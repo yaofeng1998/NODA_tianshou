@@ -5,18 +5,24 @@ import argparse
 import gym
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing import event_accumulator
+import time
 import pdb
 
 
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--task', type=str, default='Pendulum-v0')
+    parser.add_argument('--postfix', type=str, default='default')
     args = parser.parse_known_args()[0]
     return args
 
 
 def sort_file_by_time(file_path):
-    files = os.listdir(file_path)
+    abspath = os.path.abspath(file_path) + '/'
+    files = os.listdir(abspath)
+    for file in files:
+        if os.path.isdir(abspath + file):
+            files.remove(file)
     if not files:
         return
     else:
@@ -54,17 +60,23 @@ def main(args=get_args()):
     rew_ssac_mean = []
     rew_ssac_std = []
     assert len(rew_ssac_item_mean) == len(rew_ssac_item_std)
+    start_step = ea_ssac.scalars.Items('simulator/start_step')[0].value
     for i in range(len(rew_ssac_item_mean)):
         step_ssac.append(rew_ssac_item_mean[i].step)
         rew_ssac_mean.append(rew_ssac_item_mean[i].value)
         rew_ssac_std.append(rew_ssac_item_std[i].value)
 
-    step_sac = np.array(step_sac)
-    rew_sac_mean = np.array(rew_sac_mean)
-    rew_sac_std = np.array(rew_sac_std)
-    step_ssac = np.array(step_ssac)
-    rew_ssac_mean = np.array(rew_ssac_mean)
-    rew_ssac_std = np.array(rew_ssac_std)
+    start_index = 0
+    for i in range(len(step_sac)):
+        if step_sac[i] >= start_step:
+            start_index = i
+            break
+    step_sac = np.array(step_sac)[start_index:]
+    rew_sac_mean = np.array(rew_sac_mean)[start_index:]
+    rew_sac_std = np.array(rew_sac_std)[start_index:]
+    step_ssac = np.array(step_ssac)[start_index:]
+    rew_ssac_mean = np.array(rew_ssac_mean)[start_index:]
+    rew_ssac_std = np.array(rew_ssac_std)[start_index:]
 
     fig, ax = plt.subplots(figsize=(6, 5))
     ax.plot(step_sac, rew_sac_mean, label='SAC')
@@ -82,7 +94,7 @@ def main(args=get_args()):
     ax.set_xlabel('Step')
     ax.set_ylabel('Reward')
     ax.legend(loc='best')
-    plt.savefig('SAC-NODAE-comparison-' + args.task + '.pdf')
+    plt.savefig('SAC-NODAE-comparison-' + args.task + '-' + args.postfix + '.pdf')
     plt.close()
 
 
