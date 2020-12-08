@@ -40,8 +40,8 @@ def main(args=get_args()):
     ea_sac = event_accumulator.EventAccumulator(log_dir + 'baseline/' + newest_file_baseline)
     ea_sac.Reload()
     # print(ea_sac.scalars.Keys())
-    rew_sac_item_mean = ea_sac.scalars.Items('train/rew')
-    rew_sac_item_std = ea_sac.scalars.Items('train/rew_std')
+    rew_sac_item_mean = ea_sac.scalars.Items('test/rew')
+    rew_sac_item_std = ea_sac.scalars.Items('test/rew_std')
     step_sac = []
     rew_sac_mean = []
     rew_sac_std = []
@@ -54,8 +54,8 @@ def main(args=get_args()):
     newest_file = sort_file_by_time(log_dir)[-1]
     ea_ssac = event_accumulator.EventAccumulator(log_dir + newest_file)
     ea_ssac.Reload()
-    rew_ssac_item_mean = ea_ssac.scalars.Items('train/rew')
-    rew_ssac_item_std = ea_ssac.scalars.Items('train/rew_std')
+    rew_ssac_item_mean = ea_ssac.scalars.Items('test/rew')
+    rew_ssac_item_std = ea_ssac.scalars.Items('test/rew_std')
     step_ssac = []
     rew_ssac_mean = []
     rew_ssac_std = []
@@ -94,7 +94,10 @@ def main(args=get_args()):
     ax.set_xlabel('Step')
     ax.set_ylabel('Reward')
     ax.legend(loc='best')
-    plt.savefig('SAC-NODAE-comparison-' + args.task + '-' + args.postfix + '.pdf')
+    save_path = os.path.abspath('results/') + '/'
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    plt.savefig(save_path + 'SAC-NODAE-comparison-' + args.task + '-' + args.postfix + '.pdf')
     plt.close()
 
 

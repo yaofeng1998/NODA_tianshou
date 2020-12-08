@@ -151,13 +151,15 @@ class NODAE(nn.Module):
         out_obs, out_rew, recon_obs = self.get_obs_rew(x)
         if self.args.task == 'Pendulum-v0':
             # pass
-            out_obs_norm = out_obs[:, 0] ** 2 + out_obs[:, 1] ** 2 + np.finfo(np.float32).eps
-            out_obs[:, 0] /= out_obs_norm
-            out_obs[:, 1] /= out_obs_norm
+            # out_obs_norm = out_obs[:, 0] ** 2 + out_obs[:, 1] ** 2 + np.finfo(np.float32).eps
+            # out_obs[:, 0] /= out_obs_norm
+            # out_obs[:, 1] /= out_obs_norm
+            out_obs[:, [0, 1]] = torch.clamp(out_obs[:, [0, 1]], -1, 1)
             out_obs[:, 2] = torch.clamp(out_obs[:, 2], -8, 8)
-            recon_obs_norm = recon_obs[:, 0] ** 2 + recon_obs[:, 1] ** 2 + np.finfo(np.float32).eps
-            recon_obs[:, 0] /= recon_obs_norm
-            recon_obs[:, 1] /= recon_obs_norm
+            # recon_obs_norm = recon_obs[:, 0] ** 2 + recon_obs[:, 1] ** 2 + np.finfo(np.float32).eps
+            # recon_obs[:, 0] /= recon_obs_norm
+            # recon_obs[:, 1] /= recon_obs_norm
+            recon_obs[:, [0, 1]] = torch.clamp(recon_obs[:, [0, 1]], -1, 1)
             recon_obs[:, 2] = torch.clamp(recon_obs[:, 2], -8, 8)
         if train:
             assert targets is not None
