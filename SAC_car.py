@@ -49,6 +49,7 @@ def get_args():
     parser.add_argument('--simulator-lr', type=float, default=1e-3)
     parser.add_argument('--model', type=str, default='NODAE')
     parser.add_argument('--max-update-step', type=int, default=400)
+    parser.add_argument('--simulator-batch-size', type=int, default=1024)
     parser.add_argument('--white-box', action='store_true', default=False)
     parser.add_argument('--loss-weight-trans', type=float, default=1)
     parser.add_argument('--loss-weight-ae', type=float, default=1)

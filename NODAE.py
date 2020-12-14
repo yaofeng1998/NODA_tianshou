@@ -88,7 +88,7 @@ class MLPAutoencoder(torch.nn.Module):
 
 class NODAE(nn.Module):
 
-    def __init__(self, args, tol=1e-3):
+    def __init__(self, args, tol=1e-7):
         super(NODAE, self).__init__()
         self.args = args
         state_shape = args.state_shape
@@ -102,7 +102,7 @@ class NODAE(nn.Module):
         self.latent_dim = args.simulator_latent_dim
         self.hidden_dim = args.simulator_hidden_dim
         self.ae = MLPAutoencoder(state_shape, self.hidden_dim, self.latent_dim, nonlinearity='relu')
-        self.integration_time = torch.tensor([0, 1]).float()
+        self.integration_time = torch.tensor([0, 0.1]).float()
         self.odefunc = MLP(self.latent_dim + action_shape, self.hidden_dim, self.latent_dim)
         self.rew_nn = MLP(self.latent_dim + action_shape, self.hidden_dim, 1)
         self.device = args.device
@@ -130,7 +130,7 @@ class NODAE(nn.Module):
         for i in range(self.args.train_simulator_step):
             self.optimizer.zero_grad()
             np.random.shuffle(index)
-            index = index[0: self.args.batch_size]
+            index = index[0: min(self.args.simulator_batch_size, len(index))]
             x = x_all[index]
             obs = x[:, 0:self.state_shape]
             out_obs, out_rew, recon_obs = self.get_obs_rew(x)

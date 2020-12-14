@@ -92,7 +92,7 @@ class SimulationEnv(gym.Env):
         self.obs = None
         self.max_step = args.n_simulator_step
         self.current_step = 0
-        self.batch_size = 8 #args.batch_size
+        self.batch_size = 1600 // args.n_simulator_step
         self.task = args.task
         self.original_env = gym.make(self.task)
 
