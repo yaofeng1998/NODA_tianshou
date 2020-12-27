@@ -107,7 +107,7 @@ class SSACPolicy(DDPGPolicy):
         self._deterministic_eval = deterministic_eval
         self.__eps = np.finfo(np.float32).eps.item()
 
-    def train(self, mode: bool = True) -> "SACPolicy":
+    def train(self, mode: bool = True) -> "SSACPolicy":
         self.training = mode
         self.actor.train(mode)
         self.critic1.train(mode)
@@ -264,13 +264,30 @@ class SSACPolicy(DDPGPolicy):
 
         return result
 
+    def imagine(self, obs):
+        current_latent_obs = self.simulator.encode(obs)
+        loss_actor = 0
+        loss_critic = 0
+        for i in range(0, self.args.imagine_step):
+            act_batch = self.forward(Batch(obs=current_latent_obs))
+            current_act = act_batch["act"]
+            loss_actor += 0
+            current_latent_obs, reward = self.simulator.get_obs_rew_after_encode(self, current_latent_obs, current_act)
+
+
+
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
-        if self.args.baseline:
-            return self.learn_batch(batch)
         batch.obs += self.args.noise_obs * np.random.randn(*np.shape(batch.obs))
         batch.rew += self.args.noise_rew * np.random.randn(*np.shape(batch.rew))
+        if self.args.baseline:
+            return self.learn_batch(batch)
         simulator_loss = self.learn_simulator(batch)
-        result = self.learn_batch(batch)
+        if np.random.randn() < -0.5 or len(self.simulator_buffer) == 0:
+            self.simulate_environment()
+        simulation_batch, indice = self.simulator_buffer.sample(self.args.batch_size)
+        simulation_batch = self.process_fn(simulation_batch, self.simulator_buffer, indice)
+        result = self.learn_batch(simulation_batch)
+        self.post_process_fn(simulation_batch, self.simulator_buffer, indice)
         result["lt"] = simulator_loss[0]
         result["lr"] = simulator_loss[1]
         self.loss_history.append([simulator_loss[0], simulator_loss[1], result["la"], result["lc"], 0, 0])
@@ -279,10 +296,10 @@ class SSACPolicy(DDPGPolicy):
     def simulate_environment(self):
         self.simulation_env = SimulationEnv(self.args, self.simulator)
         obs, act, rew, done, info = [], [], [], [], []
-        obs.append(self.simulation_env.reset())
+        obs.append(self.simulator.encode(self.simulation_env.reset()))
         for i in range(self.args.n_simulator_step):
             with torch.no_grad():
-                act.append(self(Batch(obs=obs[-1], info={})).act.cpu().numpy())
+                act.append(self(Batch(obs=self.simulator.encode(obs[-1]), info={})).act.cpu().numpy())
             result = self.simulation_env.step(act[-1])
             obs.append(result[0])
             rew.append(result[1])

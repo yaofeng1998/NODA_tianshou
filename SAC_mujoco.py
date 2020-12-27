@@ -51,7 +51,6 @@ def get_args():
     parser.add_argument('--simulator-hidden-dim', type=int, default=128)
     parser.add_argument('--simulator-lr', type=float, default=1e-3)
     parser.add_argument('--model', type=str, default='NODA')
-    parser.add_argument('--max-update-step', type=int, default=400)
     parser.add_argument('--simulator-batch-size', type=int, default=1024)
     parser.add_argument('--white-box', action='store_true', default=False)
     parser.add_argument('--loss-weight-trans', type=float, default=1)
@@ -60,6 +59,7 @@ def get_args():
     parser.add_argument('--noise-obs', type=float, default=0.0)
     parser.add_argument('--noise-rew', type=float, default=0.0)
     parser.add_argument('--n-simulator-step', type=int, default=1200)
+    parser.add_argument('--imagine-step', type=int, default=10)
     parser.add_argument('--baseline', action='store_true', default=False)
     parser.add_argument(
         '--device', type=str,
@@ -95,21 +95,25 @@ def test_sac(args=get_args()):
     train_envs.seed(args.seed)
     test_envs.seed(args.seed)
     # model
-    net = Net(args.layer_num, args.state_shape, device=args.device,
+    if args.baseline:
+        state_shape = args.state_shape
+    else:
+        state_shape = args.simulator_latent_dim
+    net = Net(args.layer_num, state_shape, device=args.device,
               hidden_layer_size=args.hidden_layer_size)
     actor = ActorProb(
         net, args.action_shape, args.max_action, args.device, unbounded=True,
         hidden_layer_size=args.hidden_layer_size, conditioned_sigma=True,
     ).to(args.device)
     actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
-    net_c1 = Net(args.layer_num, args.state_shape, args.action_shape,
+    net_c1 = Net(args.layer_num, state_shape, args.action_shape,
                  concat=True, device=args.device,
                  hidden_layer_size=args.hidden_layer_size)
     critic1 = Critic(
         net_c1, args.device, hidden_layer_size=args.hidden_layer_size
     ).to(args.device)
     critic1_optim = torch.optim.Adam(critic1.parameters(), lr=args.critic_lr)
-    net_c2 = Net(args.layer_num, args.state_shape, args.action_shape,
+    net_c2 = Net(args.layer_num, state_shape, args.action_shape,
                  concat=True, device=args.device,
                  hidden_layer_size=args.hidden_layer_size)
     critic2 = Critic(

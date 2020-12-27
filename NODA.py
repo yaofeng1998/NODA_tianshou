@@ -111,11 +111,31 @@ class NODA(nn.Module):
         self.train_targets = [[], []]
         self.optimizer = torch.optim.Adam(self.parameters(), lr=args.simulator_lr, weight_decay=1e-5)
 
+    def encode(self, x):
+        with torch.no_grad():
+            return self.ae.encode(torch.tensor(x[:, 0:self.state_shape]).float().to(self.device)).cpu().numpy()
+
+    def get_obs_rew_after_encode(self, latent_s, action):
+        with torch.no_grad():
+            latent_s = torch.tensor(latent_s).float().to(self.device)
+            action = torch.tensor(action).float().to(self.device)
+            self.integration_time = self.integration_time.to(self.device)
+
+            def odefunc(t, latent_input):
+                return self.odefunc(torch.cat((latent_input, action), dim=1))
+
+            out_obs = odeint(odefunc, latent_s, self.integration_time, rtol=self.tol, atol=self.tol)[1]
+            out_obs = self.ae.decode(out_obs)
+            out_rew = self.rew_nn(torch.cat((latent_s, action), dim=1)).squeeze(-1)
+            return out_obs.cpu().numpy(), out_rew.cpu().numpy()
+
     def get_obs_rew(self, x):
         latent_s = self.ae.encode(x[:, 0:self.state_shape])
         self.integration_time = self.integration_time.to(self.device)
-        def odefunc(t, input):
-            return self.odefunc(torch.cat((input, x[:, self.state_shape:]), dim=1))
+
+        def odefunc(t, latent_input):
+            return self.odefunc(torch.cat((latent_input, x[:, self.state_shape:]), dim=1))
+
         out_obs = odeint(odefunc, latent_s, self.integration_time, rtol=self.tol, atol=self.tol)[1]
         out_obs = self.ae.decode(out_obs)
         recon_obs = self.ae.decode(latent_s)
