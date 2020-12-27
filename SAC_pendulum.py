@@ -15,7 +15,7 @@ from tianshou.utils.net.continuous import Actor, ActorProb, Critic
 from PriorGBM import PriorGBM
 from ODENet import ODENet
 from ODEGBM import ODEGBM
-from NODAE import NODAE
+from NODA import NODA
 from Plot_tensorboard import sort_file_by_time
 import pdb
 
@@ -47,7 +47,7 @@ def get_args():
     parser.add_argument('--simulator-latent-dim', type=int, default=3)
     parser.add_argument('--simulator-hidden-dim', type=int, default=512)
     parser.add_argument('--simulator-lr', type=float, default=1e-3)
-    parser.add_argument('--model', type=str, default='NODAE')
+    parser.add_argument('--model', type=str, default='NODA')
     parser.add_argument('--max-update-step', type=int, default=400)
     parser.add_argument('--simulator-batch-size', type=int, default=1024)
     parser.add_argument('--white-box', action='store_true', default=False)
@@ -89,16 +89,16 @@ def test_sac(args=get_args()):
     train_envs.seed(args.seed)
     test_envs.seed(args.seed)
     # model
-    net = Net(args.layer_num, args.state_shape, device=args.device)
+    net = Net(args.layer_num, args.simulator_latent_dim, device=args.device)
     actor = ActorProb(
         net, args.action_shape, args.max_action, args.device, unbounded=True
     ).to(args.device)
     actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
-    net_c1 = Net(args.layer_num, args.state_shape,
+    net_c1 = Net(args.layer_num, args.simulator_latent_dim,
                  args.action_shape, concat=True, device=args.device)
     critic1 = Critic(net_c1, args.device).to(args.device)
     critic1_optim = torch.optim.Adam(critic1.parameters(), lr=args.critic_lr)
-    net_c2 = Net(args.layer_num, args.state_shape,
+    net_c2 = Net(args.layer_num, args.simulator_latent_dim,
                  args.action_shape, concat=True, device=args.device)
     critic2 = Critic(net_c2, args.device).to(args.device)
     critic2_optim = torch.optim.Adam(critic2.parameters(), lr=args.critic_lr)
@@ -107,8 +107,8 @@ def test_sac(args=get_args()):
         model = ODEGBM(args).to(args.device)
     elif args.model == 'PriorGBM':
         model = PriorGBM(args).to(args.device)
-    elif args.model == 'NODAE':
-        model = NODAE(args).to(args.device)
+    elif args.model == 'NODA':
+        model = NODA(args).to(args.device)
     else:
         assert args.model == 'ODENet'
         model = ODENet(args).to(args.device)

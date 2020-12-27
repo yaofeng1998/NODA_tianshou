@@ -86,10 +86,10 @@ class MLPAutoencoder(torch.nn.Module):
         return x_hat
 
 
-class NODAE(nn.Module):
+class NODA(nn.Module):
 
     def __init__(self, args, tol=1e-7):
-        super(NODAE, self).__init__()
+        super(NODA, self).__init__()
         self.args = args
         state_shape = args.state_shape
         action_shape = args.action_shape

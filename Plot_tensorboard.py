@@ -40,8 +40,8 @@ def main(args=get_args()):
     ea_sac = event_accumulator.EventAccumulator(log_dir + 'baseline/' + newest_file_baseline)
     ea_sac.Reload()
     # print(ea_sac.scalars.Keys())
-    rew_sac_item_mean = ea_sac.scalars.Items('test_NODAE/rew')
-    rew_sac_item_std = ea_sac.scalars.Items('test_NODAE/rew_std')
+    rew_sac_item_mean = ea_sac.scalars.Items('test_NODA/rew')
+    rew_sac_item_std = ea_sac.scalars.Items('test_NODA/rew_std')
     step_sac = []
     rew_sac_mean = []
     rew_sac_std = []
@@ -54,23 +54,23 @@ def main(args=get_args()):
     newest_file = sort_file_by_time(log_dir)[-1]
     ea_ssac = event_accumulator.EventAccumulator(log_dir + newest_file)
     ea_ssac.Reload()
-    rew_ssac_item_mean = ea_ssac.scalars.Items('test_NODAE/rew')
-    rew_ssac_item_std = ea_ssac.scalars.Items('test_NODAE/rew_std')
+    rew_ssac_item_mean = ea_ssac.scalars.Items('test_NODA/rew')
+    rew_ssac_item_std = ea_ssac.scalars.Items('test_NODA/rew_std')
     step_ssac = []
     rew_ssac_mean = []
     rew_ssac_std = []
     assert len(rew_ssac_item_mean) == len(rew_ssac_item_std)
-    start_step = ea_ssac.scalars.Items('simulator/start_step')[0].value
     for i in range(len(rew_ssac_item_mean)):
         step_ssac.append(rew_ssac_item_mean[i].step)
         rew_ssac_mean.append(rew_ssac_item_mean[i].value)
         rew_ssac_std.append(rew_ssac_item_std[i].value)
 
     start_index = 0
-    for i in range(len(step_sac)):
-        if step_sac[i] >= start_step:
-            start_index = i
-            break
+    # start_step = ea_ssac.scalars.Items('simulator/start_step')[0].value
+    # for i in range(len(step_sac)):
+    #     if step_sac[i] >= start_step:
+    #         start_index = i
+    #         break
     step_sac = np.array(step_sac)[start_index:]
     rew_sac_mean = np.array(rew_sac_mean)[start_index:]
     rew_sac_std = np.array(rew_sac_std)[start_index:]
@@ -81,7 +81,7 @@ def main(args=get_args()):
     fig, ax = plt.subplots(figsize=(6, 5))
     ax.plot(step_sac, rew_sac_mean, label='SAC')
     ax.fill_between(step_sac, rew_sac_mean - rew_sac_std, rew_sac_mean + rew_sac_std, alpha=0.3)
-    ax.plot(step_ssac, rew_ssac_mean, label='NODAE-SAC')
+    ax.plot(step_ssac, rew_ssac_mean, label='NODA')
     ax.fill_between(step_ssac, rew_ssac_mean - rew_ssac_std, rew_ssac_mean + rew_ssac_std, alpha=0.3)
 
     if len(step_sac) > len(step_ssac):
@@ -97,7 +97,7 @@ def main(args=get_args()):
     save_path = os.path.abspath('results/') + '/'
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-    plt.savefig(save_path + 'SAC-NODAE-comparison-' + args.task + '-' + args.postfix + '.pdf')
+    plt.savefig(save_path + 'SAC-NODA-comparison-' + args.task + '-' + args.postfix + '.pdf')
     plt.close()
 
 

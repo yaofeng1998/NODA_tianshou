@@ -83,7 +83,6 @@ class SSACPolicy(DDPGPolicy):
         self.simulation_env = None
         self.loss_history = []
         self.gbm_model = None
-        self.update_step = self.args.max_update_step
         self.simulator_buffer = ReplayBuffer(size=self.args.buffer_size)
 
         self.actor, self.actor_optim = actor, actor_optim
@@ -266,33 +265,15 @@ class SSACPolicy(DDPGPolicy):
         return result
 
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
-        if self.update_step > 0:
-            self.update_step -= 1
-            batch.obs += self.args.noise_obs * np.random.randn(*np.shape(batch.obs))
-            batch.rew += self.args.noise_rew * np.random.randn(*np.shape(batch.rew))
-            simulator_loss = self.learn_simulator(batch)
-            result = self.learn_batch(batch)
-            result["lt"] = simulator_loss[0]
-            result["lr"] = simulator_loss[1]
-            # result["m"] = self.simulator.m
-            # result["l"] = self.simulator.l
-            # result["g"] = self.simulator.g
-            # result["dt"] = self.simulator.dt
-            self.loss_history.append([simulator_loss[0], simulator_loss[1], result["la"], result["lc"], 0, 0])
-        else:
-            if not self.start_simulation:
-                kwargs['writer'].add_scalar('simulator/start_step', kwargs['env_step'], global_step=kwargs['env_step'])
-                self.start_simulation = True
-            result = self.get_loss_batch(batch)
-            if kwargs['i'] == 0 or self.simulator_buffer._size < self.args.batch_size:
-                self.simulate_environment()
-            simulation_batch, indice = self.simulator_buffer.sample(self.args.batch_size)
-            simulation_batch = self.process_fn(simulation_batch, self.simulator_buffer, indice)
-            simulator_result = self.learn_batch(simulation_batch)
-            self.post_process_fn(simulation_batch, self.simulator_buffer, indice)
-            result["la2"] = simulator_result["la"]
-            result["lc2"] = simulator_result["lc"]
-            self.loss_history.append([0, 0, result["la"], result["lc"], result["la2"], result["lc2"]])
+        if self.args.baseline:
+            return self.learn_batch(batch)
+        batch.obs += self.args.noise_obs * np.random.randn(*np.shape(batch.obs))
+        batch.rew += self.args.noise_rew * np.random.randn(*np.shape(batch.rew))
+        simulator_loss = self.learn_simulator(batch)
+        result = self.learn_batch(batch)
+        result["lt"] = simulator_loss[0]
+        result["lr"] = simulator_loss[1]
+        self.loss_history.append([simulator_loss[0], simulator_loss[1], result["la"], result["lc"], 0, 0])
         return result
 
     def simulate_environment(self):
@@ -322,6 +303,5 @@ class SSACPolicy(DDPGPolicy):
         target_obs = target_obs.to(self.args.device)
         target_rew = target_rew.to(self.args.device)
         targets = [target_obs, target_rew]
-        losses = self.simulator(batch.obs, batch.act, white_box=self.args.white_box, train=True,
-                                targets=targets, step=self.update_step)
+        losses = self.simulator(batch.obs, batch.act, white_box=self.args.white_box, train=True, targets=targets)
         return losses[0], losses[1]

@@ -15,7 +15,7 @@ from tianshou.utils.net.continuous import ActorProb, Critic
 from PriorGBM import PriorGBM
 from ODENet import ODENet
 from ODEGBM import ODEGBM
-from NODAE import NODAE
+from NODA import NODA
 from Plot_tensorboard import sort_file_by_time
 import pdb
 
@@ -50,7 +50,7 @@ def get_args():
     parser.add_argument('--simulator-latent-dim', type=int, default=8)
     parser.add_argument('--simulator-hidden-dim', type=int, default=128)
     parser.add_argument('--simulator-lr', type=float, default=1e-3)
-    parser.add_argument('--model', type=str, default='NODAE')
+    parser.add_argument('--model', type=str, default='NODA')
     parser.add_argument('--max-update-step', type=int, default=400)
     parser.add_argument('--simulator-batch-size', type=int, default=1024)
     parser.add_argument('--white-box', action='store_true', default=False)
@@ -127,8 +127,8 @@ def test_sac(args=get_args()):
         model = ODEGBM(args).to(args.device)
     elif args.model == 'PriorGBM':
         model = PriorGBM(args).to(args.device)
-    elif args.model == 'NODAE':
-        model = NODAE(args).to(args.device)
+    elif args.model == 'NODA':
+        model = NODA(args).to(args.device)
     else:
         assert args.model == 'ODENet'
         model = ODENet(args).to(args.device)
