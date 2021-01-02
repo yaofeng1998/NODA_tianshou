@@ -37,7 +37,7 @@ def get_args():
     parser.add_argument('--step-per-epoch', type=int, default=50000)
     parser.add_argument('--collect-per-step', type=int, default=4)
     parser.add_argument('--update-per-step', type=int, default=1)
-    parser.add_argument('--pre-collect-step', type=int, default=10000)
+    parser.add_argument('--pre-collect-step', type=int, default=0)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--hidden-layer-size', type=int, default=256)
     parser.add_argument('--layer-num', type=int, default=1)
@@ -47,8 +47,8 @@ def get_args():
     parser.add_argument('--render', type=float, default=0.)
     parser.add_argument('--log-interval', type=int, default=1)
     parser.add_argument('--train-simulator-step', type=int, default=3)
-    parser.add_argument('--simulator-latent-dim', type=int, default=8)
-    parser.add_argument('--simulator-hidden-dim', type=int, default=128)
+    parser.add_argument('--simulator-latent-dim', type=int, default=16)
+    parser.add_argument('--simulator-hidden-dim', type=int, default=256)
     parser.add_argument('--simulator-lr', type=float, default=1e-3)
     parser.add_argument('--model', type=str, default='NODA')
     parser.add_argument('--simulator-batch-size', type=int, default=1024)
@@ -58,7 +58,8 @@ def get_args():
     parser.add_argument('--loss-weight-rew', type=float, default=1)
     parser.add_argument('--noise-obs', type=float, default=0.0)
     parser.add_argument('--noise-rew', type=float, default=0.0)
-    parser.add_argument('--n-simulator-step', type=int, default=1200)
+    parser.add_argument('--n-simulator-step', type=int, default=200)
+    parser.add_argument('--switch-step', type=int, default=1000)
     parser.add_argument('--imagine-step', type=int, default=10)
     parser.add_argument('--baseline', action='store_true', default=False)
     parser.add_argument(
@@ -184,7 +185,8 @@ def test_sac(args=get_args()):
         exit(0)
 
     # trainer
-    train_collector.collect(n_step=args.pre_collect_step, random=True)
+    if args.pre_collect_step > 0:
+        train_collector.collect(n_step=args.pre_collect_step, random=True)
     result = offpolicy_trainer(
         policy, train_collector, test_collector, args.epoch,
         args.step_per_epoch, args.collect_per_step, args.test_num,

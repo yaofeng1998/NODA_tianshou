@@ -50,7 +50,7 @@ class MLP(torch.nn.Module):
 class MLPAutoencoder(torch.nn.Module):
     '''A salt-of-the-earth MLP Autoencoder + some edgy res connections'''
 
-    def __init__(self, input_dim, hidden_dim, latent_dim, nonlinearity='tanh'):
+    def __init__(self, input_dim, hidden_dim, latent_dim, nonlinearity='relu'):
         super(MLPAutoencoder, self).__init__()
         self.linear1 = torch.nn.Linear(input_dim, hidden_dim)
         self.linear2 = torch.nn.Linear(hidden_dim, hidden_dim)
@@ -129,8 +129,14 @@ class NODA(nn.Module):
             out_rew = self.rew_nn(torch.cat((latent_s, action), dim=1)).squeeze(-1)
             return out_obs.cpu().numpy(), out_rew.cpu().numpy()
 
-    def get_obs_rew(self, x):
+    def encode_torch(self, x):
+        with torch.no_grad():
+            return self.ae.encode(x[:, 0:self.state_shape])
+
+    def get_obs_rew(self, x, fix_encoder=False):
         latent_s = self.ae.encode(x[:, 0:self.state_shape])
+        if fix_encoder:
+            latent_s = latent_s.detach()
         self.integration_time = self.integration_time.to(self.device)
 
         def odefunc(t, latent_input):
@@ -142,7 +148,7 @@ class NODA(nn.Module):
         out_rew = self.rew_nn(torch.cat((latent_s, x[:, self.state_shape:]), dim=1)).squeeze(-1)
         return out_obs, out_rew, recon_obs
 
-    def train_sampled_data(self):
+    def train_sampled_data(self, fix_encoder=False):
         x_all = torch.cat(self.train_data)
         obs_target_all = torch.cat(self.train_targets[0])
         rew_target_all = torch.cat(self.train_targets[1])
@@ -153,7 +159,7 @@ class NODA(nn.Module):
             index = index[0: min(self.args.simulator_batch_size, len(index))]
             x = x_all[index]
             obs = x[:, 0:self.state_shape]
-            out_obs, out_rew, recon_obs = self.get_obs_rew(x)
+            out_obs, out_rew, recon_obs = self.get_obs_rew(x, fix_encoder)
             obs_target = obs_target_all[index]
             rew_target = rew_target_all[index]
             loss_trans = self.args.loss_weight_trans * ((out_obs - obs_target) ** 2).mean()
@@ -164,7 +170,7 @@ class NODA(nn.Module):
             self.optimizer.step()
             # print(loss.item())
 
-    def forward(self, obs, act, train=True, targets=None, **kwargs):
+    def forward(self, obs, act, train=True, targets=None, fix_encoder=False, **kwargs):
         if self.args.task == 'Pendulum-v0':
             act = np.clip(act, -2, 2)
         x = torch.tensor(np.concatenate((obs, act), axis=1)).float().to(self.device)
@@ -190,7 +196,7 @@ class NODA(nn.Module):
             self.train_data.append(x)
             self.train_targets[0].append(targets[0])
             self.train_targets[1].append(targets[1])
-            self.train_sampled_data()
+            self.train_sampled_data(fix_encoder=fix_encoder)
             return (loss_trans + loss_ae).item(), loss_rew.item()
         else:
             return out_obs.cpu().numpy(), out_rew.cpu().numpy()

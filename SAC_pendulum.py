@@ -56,6 +56,7 @@ def get_args():
     parser.add_argument('--noise-obs', type=float, default=0)
     parser.add_argument('--noise-rew', type=float, default=0)
     parser.add_argument('--n-simulator-step', type=int, default=200)
+    parser.add_argument('--switch-step', type=int, default=200)
     parser.add_argument('--imagine-step', type=int, default=10)
     parser.add_argument('--baseline', action='store_true', default=False)
     parser.add_argument(

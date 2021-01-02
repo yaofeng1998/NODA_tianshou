@@ -84,6 +84,7 @@ class SSACPolicy(DDPGPolicy):
         self.loss_history = []
         self.gbm_model = None
         self.simulator_buffer = ReplayBuffer(size=self.args.buffer_size)
+        self.update_step = 0
 
         self.actor, self.actor_optim = actor, actor_optim
         self.critic1, self.critic1_old = critic1, deepcopy(critic1)
@@ -132,6 +133,8 @@ class SSACPolicy(DDPGPolicy):
             **kwargs: Any,
     ) -> Batch:
         obs = batch[input]
+        if not self.args.baseline:
+            obs = self.simulator.encode(obs)
         logits, h = self.actor(obs, state=state, info=batch.info)
         assert isinstance(logits, tuple)
         dist = Independent(Normal(*logits), 1)
@@ -158,17 +161,26 @@ class SSACPolicy(DDPGPolicy):
             obs_next_result = self(batch, input='obs_next')
             a_ = obs_next_result.act
             batch.act = to_torch_as(batch.act, a_)
-            target_q = torch.min(
-                self.critic1_old(batch.obs_next, a_),
-                self.critic2_old(batch.obs_next, a_),
-            ) - self._alpha * obs_next_result.log_prob
+            if self.args.baseline:
+                target_q = torch.min(
+                    self.critic1_old(batch.obs_next, a_),
+                    self.critic2_old(batch.obs_next, a_),
+                ) - self._alpha * obs_next_result.log_prob
+            else:
+                target_q = torch.min(
+                    self.critic1_old(self.simulator.encode(batch.obs_next), a_),
+                    self.critic2_old(self.simulator.encode(batch.obs_next), a_),
+                ) - self._alpha * obs_next_result.log_prob
         return target_q
 
     def learn_batch(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
         weight = batch.pop("weight", 1.0)
 
         # critic 1
-        current_q1 = self.critic1(batch.obs, batch.act).flatten()
+        if self.args.baseline:
+            current_q1 = self.critic1(batch.obs, batch.act).flatten()
+        else:
+            current_q1 = self.critic1(self.simulator.encode(batch.obs), batch.act).flatten()
         target_q = batch.returns.flatten()
         td1 = current_q1 - target_q
         critic1_loss = (td1.pow(2) * weight).mean()
@@ -178,7 +190,10 @@ class SSACPolicy(DDPGPolicy):
         self.critic1_optim.step()
 
         # critic 2
-        current_q2 = self.critic2(batch.obs, batch.act).flatten()
+        if self.args.baseline:
+            current_q2 = self.critic2(batch.obs, batch.act).flatten()
+        else:
+            current_q2 = self.critic2(self.simulator.encode(batch.obs), batch.act).flatten()
         td2 = current_q2 - target_q
         critic2_loss = (td2.pow(2) * weight).mean()
         # critic2_loss = F.mse_loss(current_q2, target_q)
@@ -190,8 +205,12 @@ class SSACPolicy(DDPGPolicy):
         # actor
         obs_result = self(batch)
         a = obs_result.act
-        current_q1a = self.critic1(batch.obs, a).flatten()
-        current_q2a = self.critic2(batch.obs, a).flatten()
+        if self.args.baseline:
+            current_q1a = self.critic1(batch.obs, a).flatten()
+            current_q2a = self.critic2(batch.obs, a).flatten()
+        else:
+            current_q1a = self.critic1(self.simulator.encode(batch.obs), a).flatten()
+            current_q2a = self.critic2(self.simulator.encode(batch.obs), a).flatten()
         actor_loss = (self._alpha * obs_result.log_prob.flatten()
                       - torch.min(current_q1a, current_q2a)).mean()
         self.actor_optim.zero_grad()
@@ -218,52 +237,6 @@ class SSACPolicy(DDPGPolicy):
 
         return result
 
-    def get_loss_batch(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
-        with torch.no_grad():
-            weight = batch.pop("weight", 1.0)
-
-            # critic 1
-            current_q1 = self.critic1(batch.obs, batch.act).flatten()
-            target_q = batch.returns.flatten()
-            td1 = current_q1 - target_q
-            critic1_loss = (td1.pow(2) * weight).mean()
-            # critic1_loss = F.mse_loss(current_q1, target_q)
-
-            # critic 2
-            current_q2 = self.critic2(batch.obs, batch.act).flatten()
-            td2 = current_q2 - target_q
-            critic2_loss = (td2.pow(2) * weight).mean()
-            # critic2_loss = F.mse_loss(current_q2, target_q)
-            # batch.weight = (td1 + td2) / 2.0  # prio-buffer
-
-            # actor
-            obs_result = self(batch)
-            a = obs_result.act
-            current_q1a = self.critic1(batch.obs, a).flatten()
-            current_q2a = self.critic2(batch.obs, a).flatten()
-            actor_loss = (self._alpha * obs_result.log_prob.flatten()
-                          - torch.min(current_q1a, current_q2a)).mean()
-
-            if self._is_auto_alpha:
-                log_prob = obs_result.log_prob.detach() + self._target_entropy
-                alpha_loss = -(self._log_alpha * log_prob).mean()
-                self._alpha_optim.zero_grad()
-                alpha_loss.backward()
-                self._alpha_optim.step()
-                self._alpha = self._log_alpha.detach().exp()
-
-            # self.sync_weight()
-
-            result = {
-                "la": actor_loss.item(),
-                "lc": (critic1_loss.item() + critic2_loss.item()) / 2.0,
-            }
-        if self._is_auto_alpha:
-            result["lal"] = alpha_loss.item()
-            result["a"] = self._alpha.item()  # type: ignore
-
-        return result
-
     def imagine(self, obs):
         current_latent_obs = self.simulator.encode(obs)
         loss_actor = 0
@@ -274,15 +247,22 @@ class SSACPolicy(DDPGPolicy):
             loss_actor += 0
             current_latent_obs, reward = self.simulator.get_obs_rew_after_encode(self, current_latent_obs, current_act)
 
-
-
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
         batch.obs += self.args.noise_obs * np.random.randn(*np.shape(batch.obs))
         batch.rew += self.args.noise_rew * np.random.randn(*np.shape(batch.rew))
         if self.args.baseline:
             return self.learn_batch(batch)
-        simulator_loss = self.learn_simulator(batch)
-        if np.random.randn() < -0.5 or len(self.simulator_buffer) == 0:
+        self.update_step += 1
+        if self.update_step < self.args.switch_step:
+            simulator_loss = self.learn_simulator(batch)
+            result = self.learn_batch(batch)
+            result["lt"] = simulator_loss[0]
+            result["lr"] = simulator_loss[1]
+            return result
+        else:
+            simulator_loss = self.learn_simulator(batch, fix_encoder=True)
+        self.learn_batch(batch)
+        if self.update_step % 100 == 0 or len(self.simulator_buffer) == 0:
             self.simulate_environment()
         simulation_batch, indice = self.simulator_buffer.sample(self.args.batch_size)
         simulation_batch = self.process_fn(simulation_batch, self.simulator_buffer, indice)
@@ -296,10 +276,10 @@ class SSACPolicy(DDPGPolicy):
     def simulate_environment(self):
         self.simulation_env = SimulationEnv(self.args, self.simulator)
         obs, act, rew, done, info = [], [], [], [], []
-        obs.append(self.simulator.encode(self.simulation_env.reset()))
+        obs.append(self.simulation_env.reset())
         for i in range(self.args.n_simulator_step):
             with torch.no_grad():
-                act.append(self(Batch(obs=self.simulator.encode(obs[-1]), info={})).act.cpu().numpy())
+                act.append(self(Batch(obs=obs[-1], info={})).act.cpu().numpy())
             result = self.simulation_env.step(act[-1])
             obs.append(result[0])
             rew.append(result[1])
@@ -315,10 +295,11 @@ class SSACPolicy(DDPGPolicy):
                 self.simulator_buffer.add(obs[i, j], act[i, j], rew[i, j], done[i, j], obs_next[i, j])
         return None
 
-    def learn_simulator(self, batch: Batch):
+    def learn_simulator(self, batch: Batch, fix_encoder=False):
         target_obs, target_rew = torch.tensor(batch.obs_next).float(), torch.tensor(batch.rew).float()
         target_obs = target_obs.to(self.args.device)
         target_rew = target_rew.to(self.args.device)
         targets = [target_obs, target_rew]
-        losses = self.simulator(batch.obs, batch.act, white_box=self.args.white_box, train=True, targets=targets)
+        losses = self.simulator(batch.obs, batch.act, white_box=self.args.white_box,
+                                train=True, targets=targets, fix_encoder=fix_encoder)
         return losses[0], losses[1]
