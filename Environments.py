@@ -87,7 +87,6 @@ class PendulumEnv(gym.Env):
 class SimulationEnv(gym.Env):
     def __init__(self, args, model):
         self.args = args
-        self.white_box = args.white_box
         self.model = model
         self.obs = None
         self.max_step = args.n_simulator_step
@@ -112,7 +111,7 @@ class SimulationEnv(gym.Env):
 
     def step(self, action):
         with torch.no_grad():
-            obs, rew = self.model(self.obs, action, white_box=self.white_box, train=False)
+            obs, rew = self.model(self.obs, action, train=False)
         self.current_step += 1
         assert self.current_step <= self.max_step
         if self.current_step == self.max_step:

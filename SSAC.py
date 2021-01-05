@@ -13,6 +13,7 @@ from gym.utils import seeding
 from os import path
 from Environments import SimulationEnv
 import argparse
+import time
 
 
 class SSACPolicy(DDPGPolicy):
@@ -237,40 +238,49 @@ class SSACPolicy(DDPGPolicy):
 
         return result
 
-    def imagine(self, obs):
-        current_latent_obs = self.simulator.encode(obs)
-        loss_actor = 0
-        loss_critic = 0
-        for i in range(0, self.args.imagine_step):
-            act_batch = self.forward(Batch(obs=current_latent_obs))
-            current_act = act_batch["act"]
-            loss_actor += 0
-            current_latent_obs, reward = self.simulator.get_obs_rew_after_encode(self, current_latent_obs, current_act)
+    def learn_batch_NODA(self, batch: Batch) -> Dict[str, float]:
+        obs_result = self(batch)
+        obs = batch.obs
+        act = obs_result.act.clone().detach().cpu().numpy()
+        x = torch.tensor(np.concatenate((obs, act), axis=1)).float().to(self.simulator.device)
+        out_obs, out_rew, recon_obs = self.simulator.get_obs_rew(x)
+        current_q = out_rew.flatten().detach()
+        actor_loss = (self._alpha * obs_result.log_prob.flatten() - current_q).mean()
+        self.actor_optim.zero_grad()
+        actor_loss.backward()
+        self.actor_optim.step()
+
+        result = {
+            "la": actor_loss.item(),
+            "lc": 0,
+        }
+        return result
 
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
         batch.obs += self.args.noise_obs * np.random.randn(*np.shape(batch.obs))
         batch.rew += self.args.noise_rew * np.random.randn(*np.shape(batch.rew))
+        self.simulator.critic1 = self.critic1_old
+        self.simulator.critic2 = self.critic2_old
         if self.args.baseline:
             return self.learn_batch(batch)
         self.update_step += 1
-        if self.update_step < self.args.switch_step:
-            simulator_loss = self.learn_simulator(batch)
-            result = self.learn_batch(batch)
-            result["lt"] = simulator_loss[0]
-            result["lr"] = simulator_loss[1]
-            return result
-        else:
-            simulator_loss = self.learn_simulator(batch, fix_encoder=True)
-        self.learn_batch(batch)
-        if self.update_step % 100 == 0 or len(self.simulator_buffer) == 0:
-            self.simulate_environment()
-        simulation_batch, indice = self.simulator_buffer.sample(self.args.batch_size)
-        simulation_batch = self.process_fn(simulation_batch, self.simulator_buffer, indice)
-        result = self.learn_batch(simulation_batch)
-        self.post_process_fn(simulation_batch, self.simulator_buffer, indice)
+        simulator_loss = self.learn_simulator(batch)
+        result = self.learn_batch(batch)
         result["lt"] = simulator_loss[0]
-        result["lr"] = simulator_loss[1]
-        self.loss_history.append([simulator_loss[0], simulator_loss[1], result["la"], result["lc"], 0, 0])
+        result["lc"] = simulator_loss[1]
+        if self.update_step % 100 == 0:
+            torch.cuda.empty_cache()
+        if self.update_step >= self.args.switch_step:
+            if self.update_step % 100 == 0 or len(self.simulator_buffer) == 0:
+                self.simulate_environment()
+            simulation_batch, indice = self.simulator_buffer.sample(self.args.batch_size)
+            # simulation_batch = self.process_fn(simulation_batch, self.simulator_buffer, indice)
+            simulation_batch.returns = torch.from_numpy(simulation_batch.rew).float().to(self.args.device)
+            result = self.learn_batch(simulation_batch)
+            self.post_process_fn(simulation_batch, self.simulator_buffer, indice)
+            result["lst"] = simulator_loss[0]
+            result["lsc"] = simulator_loss[1]
+            self.loss_history.append([simulator_loss[0], simulator_loss[1], result["la"], result["lc"], 0, 0])
         return result
 
     def simulate_environment(self):
@@ -296,10 +306,9 @@ class SSACPolicy(DDPGPolicy):
         return None
 
     def learn_simulator(self, batch: Batch, fix_encoder=False):
-        target_obs, target_rew = torch.tensor(batch.obs_next).float(), torch.tensor(batch.rew).float()
-        target_obs = target_obs.to(self.args.device)
-        target_rew = target_rew.to(self.args.device)
+        target_obs = torch.from_numpy(batch.obs_next).float().to(self.args.device)
+        target_rew = batch.returns
         targets = [target_obs, target_rew]
-        losses = self.simulator(batch.obs, batch.act, white_box=self.args.white_box,
-                                train=True, targets=targets, fix_encoder=fix_encoder)
+        losses = self.simulator(batch.obs, batch.act, train=True, targets=targets, fix_encoder=fix_encoder)
+        del target_obs
         return losses[0], losses[1]

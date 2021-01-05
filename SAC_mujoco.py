@@ -22,7 +22,7 @@ import pdb
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task', type=str, default='Ant-v3')
+    parser.add_argument('--task', type=str, default='Swimmer-v3')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--buffer-size', type=int, default=1000000)
     parser.add_argument('--actor-lr', type=float, default=3e-4)
@@ -33,8 +33,8 @@ def get_args():
     parser.add_argument('--auto-alpha', default=False, action='store_true')
     parser.add_argument('--alpha-lr', type=float, default=3e-4)
     parser.add_argument('--n-step', type=int, default=2)
-    parser.add_argument('--epoch', type=int, default=1)
-    parser.add_argument('--step-per-epoch', type=int, default=50000)
+    parser.add_argument('--epoch', type=int, default=10)
+    parser.add_argument('--step-per-epoch', type=int, default=10000)
     parser.add_argument('--collect-per-step', type=int, default=4)
     parser.add_argument('--update-per-step', type=int, default=1)
     parser.add_argument('--pre-collect-step', type=int, default=0)
@@ -46,21 +46,19 @@ def get_args():
     parser.add_argument('--logdir', type=str, default='log')
     parser.add_argument('--render', type=float, default=0.)
     parser.add_argument('--log-interval', type=int, default=1)
-    parser.add_argument('--train-simulator-step', type=int, default=3)
-    parser.add_argument('--simulator-latent-dim', type=int, default=16)
-    parser.add_argument('--simulator-hidden-dim', type=int, default=256)
-    parser.add_argument('--simulator-lr', type=float, default=1e-3)
+    parser.add_argument('--train-simulator-step', type=int, default=1)
+    parser.add_argument('--simulator-latent-dim', type=int, default=10)
+    parser.add_argument('--simulator-hidden-dim', type=int, default=128)
+    parser.add_argument('--simulator-lr', type=float, default=3e-4)
     parser.add_argument('--model', type=str, default='NODA')
     parser.add_argument('--simulator-batch-size', type=int, default=1024)
-    parser.add_argument('--white-box', action='store_true', default=False)
     parser.add_argument('--loss-weight-trans', type=float, default=1)
     parser.add_argument('--loss-weight-ae', type=float, default=1)
     parser.add_argument('--loss-weight-rew', type=float, default=1)
     parser.add_argument('--noise-obs', type=float, default=0.0)
     parser.add_argument('--noise-rew', type=float, default=0.0)
-    parser.add_argument('--n-simulator-step', type=int, default=200)
-    parser.add_argument('--switch-step', type=int, default=1000)
-    parser.add_argument('--imagine-step', type=int, default=10)
+    parser.add_argument('--n-simulator-step', type=int, default=50)
+    parser.add_argument('--switch-step', type=int, default=100)
     parser.add_argument('--baseline', action='store_true', default=False)
     parser.add_argument(
         '--device', type=str,
@@ -133,7 +131,7 @@ def test_sac(args=get_args()):
     elif args.model == 'PriorGBM':
         model = PriorGBM(args).to(args.device)
     elif args.model == 'NODA':
-        model = NODA(args).to(args.device)
+        model = NODA(args, critic1, critic2).to(args.device)
     else:
         assert args.model == 'ODENet'
         model = ODENet(args).to(args.device)

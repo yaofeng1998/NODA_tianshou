@@ -88,7 +88,7 @@ class MLPAutoencoder(torch.nn.Module):
 
 class NODA(nn.Module):
 
-    def __init__(self, args, tol=1e-7):
+    def __init__(self, args, critic1, critic2, tol=1e-7):
         super(NODA, self).__init__()
         self.args = args
         state_shape = args.state_shape
@@ -104,12 +104,14 @@ class NODA(nn.Module):
         self.ae = MLPAutoencoder(state_shape, self.hidden_dim, self.latent_dim, nonlinearity='relu')
         self.integration_time = torch.tensor([0, 0.1]).float()
         self.odefunc = MLP(self.latent_dim + action_shape, self.hidden_dim, self.latent_dim)
-        self.rew_nn = MLP(self.latent_dim + action_shape, self.hidden_dim, 1)
+        # self.rew_nn = MLP(self.latent_dim + action_shape, self.hidden_dim, 1)
         self.device = args.device
         self.tol = tol
         self.train_data = []
         self.train_targets = [[], []]
         self.optimizer = torch.optim.Adam(self.parameters(), lr=args.simulator_lr, weight_decay=1e-5)
+        self.critic1 = critic1
+        self.critic2 = critic2
 
     def encode(self, x):
         with torch.no_grad():
@@ -126,7 +128,7 @@ class NODA(nn.Module):
 
             out_obs = odeint(odefunc, latent_s, self.integration_time, rtol=self.tol, atol=self.tol)[1]
             out_obs = self.ae.decode(out_obs)
-            out_rew = self.rew_nn(torch.cat((latent_s, action), dim=1)).squeeze(-1)
+            out_rew = torch.min(self.critic1(latent_s, action).squeeze(-1), self.critic2(latent_s, action).squeeze(-1))
             return out_obs.cpu().numpy(), out_rew.cpu().numpy()
 
     def encode_torch(self, x):
@@ -145,7 +147,8 @@ class NODA(nn.Module):
         out_obs = odeint(odefunc, latent_s, self.integration_time, rtol=self.tol, atol=self.tol)[1]
         out_obs = self.ae.decode(out_obs)
         recon_obs = self.ae.decode(latent_s)
-        out_rew = self.rew_nn(torch.cat((latent_s, x[:, self.state_shape:]), dim=1)).squeeze(-1)
+        out_rew = torch.min(self.critic1(latent_s.detach(), x[:, self.state_shape:].detach()).squeeze(-1),
+                            self.critic2(latent_s.detach(), x[:, self.state_shape:].detach()).squeeze(-1))
         return out_obs, out_rew, recon_obs
 
     def train_sampled_data(self, fix_encoder=False):
@@ -170,21 +173,14 @@ class NODA(nn.Module):
             self.optimizer.step()
             # print(loss.item())
 
-    def forward(self, obs, act, train=True, targets=None, fix_encoder=False, **kwargs):
+    def forward(self, obs, act, train=True, targets=None, fix_encoder=False):
         if self.args.task == 'Pendulum-v0':
             act = np.clip(act, -2, 2)
         x = torch.tensor(np.concatenate((obs, act), axis=1)).float().to(self.device)
         out_obs, out_rew, recon_obs = self.get_obs_rew(x)
         if self.args.task == 'Pendulum-v0':
-            # pass
-            # out_obs_norm = out_obs[:, 0] ** 2 + out_obs[:, 1] ** 2 + np.finfo(np.float32).eps
-            # out_obs[:, 0] /= out_obs_norm
-            # out_obs[:, 1] /= out_obs_norm
             out_obs[:, [0, 1]] = torch.clamp(out_obs[:, [0, 1]], -1, 1)
             out_obs[:, 2] = torch.clamp(out_obs[:, 2], -8, 8)
-            # recon_obs_norm = recon_obs[:, 0] ** 2 + recon_obs[:, 1] ** 2 + np.finfo(np.float32).eps
-            # recon_obs[:, 0] /= recon_obs_norm
-            # recon_obs[:, 1] /= recon_obs_norm
             recon_obs[:, [0, 1]] = torch.clamp(recon_obs[:, [0, 1]], -1, 1)
             recon_obs[:, 2] = torch.clamp(recon_obs[:, 2], -8, 8)
         if train:
@@ -194,6 +190,8 @@ class NODA(nn.Module):
             loss_ae = self.args.loss_weight_ae * ((recon_obs - tensor_obs) ** 2).mean()
             loss_rew = self.args.loss_weight_rew * ((out_rew - targets[1]) ** 2).mean()
             self.train_data.append(x)
+            if len(self.train_data) > 10:
+                del(self.train_data[0])
             self.train_targets[0].append(targets[0])
             self.train_targets[1].append(targets[1])
             self.train_sampled_data(fix_encoder=fix_encoder)
