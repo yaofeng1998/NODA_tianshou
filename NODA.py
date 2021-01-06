@@ -190,10 +190,12 @@ class NODA(nn.Module):
             loss_ae = self.args.loss_weight_ae * ((recon_obs - tensor_obs) ** 2).mean()
             loss_rew = self.args.loss_weight_rew * ((out_rew - targets[1]) ** 2).mean()
             self.train_data.append(x)
-            if len(self.train_data) > 10:
-                del(self.train_data[0])
             self.train_targets[0].append(targets[0])
             self.train_targets[1].append(targets[1])
+            if len(self.train_data) > 100:
+                del self.train_data[0]
+                del self.train_targets[0][0]
+                del self.train_targets[1][0]
             self.train_sampled_data(fix_encoder=fix_encoder)
             return (loss_trans + loss_ae).item(), loss_rew.item()
         else:
