@@ -268,8 +268,6 @@ class SSACPolicy(DDPGPolicy):
         result = self.learn_batch(batch)
         result["lt"] = simulator_loss[0]
         result["lc"] = simulator_loss[1]
-        if self.update_step % 100 == 0:
-            torch.cuda.empty_cache()
         if self.update_step >= self.args.switch_step:
             if self.update_step % 100 == 0 or len(self.simulator_buffer) == 0:
                 self.simulate_environment()
